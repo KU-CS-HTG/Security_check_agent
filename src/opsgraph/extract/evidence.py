@@ -23,6 +23,7 @@ _QUOTES = str.maketrans({
     "–": "-", "—": "-", "−": "-", "‐": "-", "‑": "-",
 })
 _ELLIPSIS = re.compile(r"\.{3,}|…")
+_TRAIL = ".,;:"
 _WS = re.compile(r"\s+")
 
 
@@ -56,7 +57,10 @@ def match_quote(clause_text: str, quote: str) -> str | None:
     if len(nq) < MIN_QUOTE_CHARS or len(nq) > MAX_QUOTE_CHARS:
         return None
     nt = normalize(clause_text).casefold()
-    segments = [s.strip() for s in _ELLIPSIS.split(nq) if s.strip()]
+    # a quote ending a sentence ("...parameter.") may sit mid-sentence in the source
+    segments = [s.strip().rstrip(_TRAIL).rstrip() for s in _ELLIPSIS.split(nq) if s.strip()]
+    if not segments:
+        return None
     if len(segments) > 1:
         if any(len(s) < MIN_SEGMENT_CHARS for s in segments):
             return None
@@ -65,6 +69,7 @@ def match_quote(clause_text: str, quote: str) -> str | None:
         if _in_order(_squash(nt), [_squash(s) for s in segments]):
             return "loose"
         return None
+    nq = segments[0]
     if nq in nt:
         return "exact"
     if _squash(nq) in _squash(nt):

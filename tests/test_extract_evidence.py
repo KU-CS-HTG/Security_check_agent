@@ -93,3 +93,10 @@ def test_flat_schema_mirrors_the_pydantic_model():
                 {**ok, "risk_level": "critical"}):
         with pytest.raises(ValueError):
             ExtractionResult.model_validate({"items": [bad]})
+
+
+def test_trailing_sentence_punctuation_in_quote_is_tolerated():
+    clause = "Use hostssl by setting the ssl configuration parameter (see Section 18.9 for details)."
+    assert match_quote(clause, "Use hostssl by setting the ssl configuration parameter.") == "exact"
+    assert match_quote(clause, "Use hostssl by setting the ssl configuration parameter,") == "exact"
+    assert match_quote(clause, "Use hostssl by setting the tls configuration parameter.") is None

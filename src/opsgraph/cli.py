@@ -370,13 +370,13 @@ def extract_stats() -> None:
             FROM core.extraction_result WHERE model = :model AND prompt_version = :pv
             GROUP BY status ORDER BY status"""), cur).all()
         items = conn.execute(text("""
-            SELECT count(*) AS total, count(*) FILTER (WHERE evidence_verified) AS verified,
-                   count(*) FILTER (WHERE evidence_match = 'loose') AS loose,
-                   count(*) FILTER (WHERE NOT target_found) AS target_missing,
-                   count(*) FILTER (WHERE status = 'approved') AS approved,
-                   count(*) FILTER (WHERE status = 'pending') AS pending,
-                   count(*) FILTER (WHERE payload ? 'risk_level_claimed') AS risk_dropped,
-                   count(*) FILTER (WHERE risk_source = 'document') AS risk_kept
+            SELECT count(*) AS total, count(*) FILTER (WHERE i.evidence_verified) AS verified,
+                   count(*) FILTER (WHERE i.evidence_match = 'loose') AS loose,
+                   count(*) FILTER (WHERE NOT i.target_found) AS target_missing,
+                   count(*) FILTER (WHERE i.status = 'approved') AS approved,
+                   count(*) FILTER (WHERE i.status = 'pending') AS pending,
+                   count(*) FILTER (WHERE i.payload ? 'risk_level_claimed') AS risk_dropped,
+                   count(*) FILTER (WHERE i.risk_source = 'document') AS risk_kept
             FROM core.extracted_item i JOIN core.extraction_result r ON r.id = i.result_id
             WHERE r.model = :model AND r.prompt_version = :pv"""), cur).one()
         cats = conn.execute(text("""

@@ -186,3 +186,20 @@ def test_risk_source_is_document_only_when_the_risk_was_verified(engines):
             "FROM core.extracted_item ORDER BY id")).all()
     assert [(r.item_title, r.r, r.risk_source) for r in rows] == [
         ("Risk with quote", "high", "document"), ("Risk without quote", "not_stated", None)]
+
+
+def test_cli_stats_and_show_run_against_the_database(engines):
+    from typer.testing import CliRunner
+
+    from opsgraph.cli import app
+    from opsgraph.config import load_models
+
+    _, pipeline = engines
+    model = str(load_models().llm.model)
+    run_extraction(pipeline, FakeLlm(answer(good()), answer()), model=model, min_chars=20)
+    runner = CliRunner()
+    res = runner.invoke(app, ["extract", "stats"])
+    assert res.exit_code == 0, res.output
+    assert "items: 1  evidence verified: 1 (100.0%)" in res.output
+    res = runner.invoke(app, ["extract", "show", "--page", "auth-pg-hba-conf"])
+    assert res.exit_code == 0, res.output
