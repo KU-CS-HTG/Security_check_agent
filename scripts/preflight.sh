@@ -25,6 +25,8 @@ if [ -f .env ]; then
   elif [ $IS_GITBASH -eq 1 ]; then warn ".env mode is $mode: NTFS cannot enforce 600 here (keep the file out of shared folders / OneDrive)"
   else bad ".env permissions are $mode (run: chmod 600 .env)"; fi
   if grep -qE '=change-me' .env; then bad ".env still contains 'change-me' placeholders"; else ok "no placeholder secrets"; fi
+  missing=$(grep -oE '^[A-Z0-9_]+=' .env.example | tr -d '=' | while read -r k; do grep -q "^$k=" .env || printf '%s ' "$k"; done)
+  [ -z "$missing" ] && ok "all keys of .env.example are present" || bad ".env lacks: $missing(run: bash scripts/init_env.sh --fill-missing)"
   git check-ignore -q .env && ok ".env is git-ignored" || bad ".env is NOT git-ignored"
 else
   bad ".env missing (cp .env.example .env && chmod 600 .env)"
