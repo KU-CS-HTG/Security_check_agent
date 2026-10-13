@@ -2,7 +2,8 @@
 
 This is the guard against hallucination: an extracted item is trusted only if the text it cites
 is in the clause. Matching ignores differences that do not change the wording: whitespace,
-invisible characters (zero-width space, soft hyphen, ...), typographic quotes and dashes. A
+invisible characters (zero-width space, soft hyphen, ...), typographic quotes and dashes, and
+letter case. A
 second, looser level ignores whitespace altogether (covers words glued together by invisible
 characters in the source).
 """
@@ -50,10 +51,11 @@ def match_quote(clause_text: str, quote: str) -> str | None:
     """'exact' (after normalisation), 'loose' (ignoring whitespace) or None when not found.
 
     A quote may use "..." to skip text; every remaining piece must appear, in order."""
-    nq = normalize(quote)
+    # case is ignored: "The default ..." quoted from "..., since the default ..." is faithful
+    nq = normalize(quote).casefold()
     if len(nq) < MIN_QUOTE_CHARS or len(nq) > MAX_QUOTE_CHARS:
         return None
-    nt = normalize(clause_text)
+    nt = normalize(clause_text).casefold()
     segments = [s.strip() for s in _ELLIPSIS.split(nq) if s.strip()]
     if len(segments) > 1:
         if any(len(s) < MIN_SEGMENT_CHARS for s in segments):

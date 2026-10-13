@@ -7,7 +7,7 @@ import json
 
 from opsgraph.extract.schema import CATEGORIES
 
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"
 
 EXAMPLE_CLAUSE = (
     "example_timeout (integer)\n"
@@ -26,35 +26,55 @@ _EXAMPLE_ANSWER = {"items": [{
     "evidence_quote": ("Setting it to zero disables the check, which lets an unauthenticated "
                        "client hold a connection slot indefinitely."),
     "remediation_quote": "",
+    "risk_quote": "",
 }]}
+
+EXAMPLE_CLAUSE_2 = (
+    "name_field\n"
+    "Specifies which names this record matches. The value any matches all names. A name that "
+    "starts with a plus sign matches every member of that group."
+)
 
 SYSTEM = f"""You extract security and operations check items from PostgreSQL documentation.
 You receive ONE clause of the documentation. Answer with JSON only.
 
 Rules:
-1. Output an item only if the clause describes a setting, file, privilege, role or practice that a
-   database administrator should verify or configure for security or reliable operation, AND the
-   clause itself says what it does, what is recommended, or what the risk is.
-2. Use ONLY information stated in the clause. Never add recommendations, values, risks or commands
+1. Output an item only if the clause states a recommendation, requirement, warning, default or risk
+   about a concrete setting, file, privilege, role or practice that a database administrator should
+   verify or configure for security or reliable operation.
+2. Text that only explains syntax, field formats, keywords or how a feature works, without any
+   recommendation, warning, requirement or consequence, is NOT a check item: answer
+   {{"items": []}}. Most clauses of a reference manual produce no item or one item.
+3. Use ONLY information stated in the clause. Never add recommendations, values, risks or commands
    from your own knowledge. Leave a field as an empty string when the clause does not say.
-3. evidence_quote must be copied EXACTLY, character for character, from the clause: one or two
+4. title: a concrete, checkable condition that names the setting or value, for example "Connection
+   logging is enabled". Never use vague words such as "correctly", "properly" or "appropriately".
+5. remediation: a concrete action taken from the clause (a setting to change, a command, a value).
+   It must not merely restate the title. "" if the clause gives none.
+6. target: ONE identifier copied exactly as written in the clause (setting name, file name, keyword
+   or role name).
+7. evidence_quote must be copied EXACTLY, character for character, from the clause: one or two
    consecutive sentences that support the item. Never paraphrase inside a quote. If you cannot quote
    supporting text, do not output the item.
-4. remediation_quote: an exact copy of the sentence that supports the remediation field; "" if there
-   is no remediation.
-5. risk_level: "high", "medium" or "low" only if the clause itself states or clearly describes the
-   severity (for example it allows privilege escalation or data loss); otherwise "not_stated".
-6. One clause may yield several items (one per setting) or none. If nothing qualifies, answer
-   {{"items": []}}.
-7. title: a short English phrase naming what to check (for example "Connection logging is
-   enabled"). target: the setting, file or object concerned, as written in the clause.
-8. category must be one of: {", ".join(CATEGORIES)}.
+8. remediation_quote: an exact copy of the sentence that supports the remediation; "" if none.
+9. risk_level is "high", "medium" or "low" ONLY if the clause itself states or clearly describes a
+   severity or harmful consequence (for example privilege escalation, data loss, access without
+   authentication); then risk_quote must be an exact copy of that sentence. Otherwise risk_level is
+   "not_stated" and risk_quote is "". Never guess a risk.
+10. One clause may yield several items (one per setting) or none.
+11. category must be one of: {", ".join(CATEGORIES)}.
 
-Example clause:
+Example clause 1:
 {EXAMPLE_CLAUSE}
 
-Example answer:
+Example answer 1:
 {json.dumps(_EXAMPLE_ANSWER, indent=1)}
+
+Example clause 2 (syntax only, no recommendation or risk):
+{EXAMPLE_CLAUSE_2}
+
+Example answer 2:
+{{"items": []}}
 """
 
 

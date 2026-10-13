@@ -21,6 +21,11 @@ def test_exact_quote_is_verified():
     assert match_quote(CLAUSE, "The default is off. Only superusers") is None
 
 
+def test_letter_case_does_not_matter():
+    assert match_quote(CLAUSE, "causes EACH attempted connection to the server to be logged") == (
+        "exact")
+
+
 def test_whitespace_and_line_breaks_do_not_matter():
     q = "successful completion of client authentication. Only superusers can change this parameter"
     assert match_quote(CLAUSE, q) == "exact"
@@ -77,6 +82,7 @@ def test_flat_schema_mirrors_the_pydantic_model():
     item = schema["properties"]["items"]["items"]
     assert "$ref" not in str(schema) and "anyOf" not in str(schema) and "null" not in str(schema)
     assert set(item["required"]) == set(item["properties"])
+    assert "risk_quote" in item["properties"]
     assert item["properties"]["category"]["enum"] == list(CATEGORIES)
     ok = {"title": "Connection logging is enabled", "category": "logging_audit",
           "target": "log_connections", "check_method": "", "recommended_value": "",

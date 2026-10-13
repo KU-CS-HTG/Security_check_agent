@@ -308,6 +308,8 @@ def extract_show(
     """Show results for the clauses of one page: items with their evidence, side by side."""
     from sqlalchemy import text
 
+    from opsgraph.extract.prompt import PROMPT_VERSION
+
     engine = make_engine(get_settings(), "pipeline")
     with engine.connect() as conn:
         rows = conn.execute(text("""
@@ -315,8 +317,11 @@ def extract_show(
                    i.evidence_verified, i.target_found
             FROM core.clause c JOIN core.document d ON d.id = c.document_id
             JOIN core.extraction_result r ON r.clause_id = c.id AND r.text_hash = c.text_hash
+              AND r.model = :model AND r.prompt_version = :pv
             LEFT JOIN core.extracted_item i ON i.result_id = r.id
-            WHERE d.url LIKE :u ORDER BY c.ordinal, i.id"""), {"u": f"%/{page}.html"}).all()
+            WHERE d.url LIKE :u ORDER BY c.ordinal, i.id"""),
+                            {"u": f"%/{page}.html", "model": str(load_models().llm.model),
+                             "pv": PROMPT_VERSION}).all()
     shown = 0
     last = None
     for r in rows:
@@ -334,8 +339,11 @@ def extract_show(
             p = r.payload
             mark = f"verified({r.evidence_match})" if r.evidence_verified else "NOT VERIFIED"
             missing = "" if r.target_found else " (target not in clause!)"
+            risk = p["risk_level"]
+            if p.get("risk_level_claimed"):
+                risk += f" (model claimed {p['risk_level_claimed']}: no supporting quote)"
             typer.echo(f"   - {p['title']} [{p['category']}] target={p['target']}{missing} "
-                       f"risk={p['risk_level']}  {mark}")
+                       f"risk={risk}  {mark}")
             typer.echo(f"       evidence: {p['evidence_quote']}")
             if p.get("remediation"):
                 typer.echo(f"       remediation: {p['remediation']}")
@@ -349,23 +357,33 @@ def extract_stats() -> None:
     """Quality numbers of the stored results (feeds docs/ops/PHASE2.md and the evaluation)."""
     from sqlalchemy import text
 
+    from opsgraph.extract.prompt import PROMPT_VERSION
+
     engine = make_engine(get_settings(), "pipeline")
+    cur = {"model": str(load_models().llm.model), "pv": PROMPT_VERSION}
+    typer.echo(f"model {cur['model']}, prompt version {cur['pv']}")
     with engine.connect() as conn:
         res = conn.execute(text("""
             SELECT status, count(*) AS n, round(avg(attempts), 2) AS avg_attempts,
                    round(avg(duration_ms) / 1000.0, 1) AS avg_seconds,
                    count(*) FILTER (WHERE attempts > 1) AS retried
-            FROM core.extraction_result GROUP BY status ORDER BY status""")).all()
+            FROM core.extraction_result WHERE model = :model AND prompt_version = :pv
+            GROUP BY status ORDER BY status"""), cur).all()
         items = conn.execute(text("""
             SELECT count(*) AS total, count(*) FILTER (WHERE evidence_verified) AS verified,
                    count(*) FILTER (WHERE evidence_match = 'loose') AS loose,
                    count(*) FILTER (WHERE NOT target_found) AS target_missing,
                    count(*) FILTER (WHERE status = 'approved') AS approved,
-                   count(*) FILTER (WHERE status = 'pending') AS pending
-            FROM core.extracted_item""")).one()
+                   count(*) FILTER (WHERE status = 'pending') AS pending,
+                   count(*) FILTER (WHERE payload ? 'risk_level_claimed') AS risk_dropped,
+                   count(*) FILTER (WHERE risk_source = 'document') AS risk_kept
+            FROM core.extracted_item i JOIN core.extraction_result r ON r.id = i.result_id
+            WHERE r.model = :model AND r.prompt_version = :pv"""), cur).one()
         cats = conn.execute(text("""
-            SELECT payload->>'category' AS category, count(*) AS n
-            FROM core.extracted_item WHERE evidence_verified GROUP BY 1 ORDER BY 2 DESC""")).all()
+            SELECT i.payload->>'category' AS category, count(*) AS n
+            FROM core.extracted_item i JOIN core.extraction_result r ON r.id = i.result_id
+            WHERE i.evidence_verified AND r.model = :model AND r.prompt_version = :pv
+            GROUP BY 1 ORDER BY 2 DESC"""), cur).all()
     typer.echo("clause results (status / n / avg attempts / avg seconds / retried):")
     for r in res:
         typer.echo(f"  {r.status:<7} {r.n:>5}  {r.avg_attempts}  {r.avg_seconds}s  {r.retried}")
@@ -373,6 +391,8 @@ def extract_stats() -> None:
     typer.echo(f"items: {items.total}  evidence verified: {items.verified} ({pct})  "
                f"loose matches: {items.loose}  target missing: {items.target_missing}  "
                f"pending: {items.pending}  approved: {items.approved}")
+    typer.echo(f"risk: kept (quote verified) {items.risk_kept}, "
+               f"dropped (claimed without support) {items.risk_dropped}")
     typer.echo("verified items by category: " + ", ".join(f"{c.category}={c.n}" for c in cats))
 
 

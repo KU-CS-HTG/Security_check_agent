@@ -164,6 +164,21 @@ python -m opsgraph extract stats                                     # 품질 �
 - `extract show --problems`: 실패했거나 근거가 검증되지 않은 것만 본다.
 - 첫 호출은 모델을 GPU에 올리느라 10~30초 걸릴 수 있다. 응답이 400이면 Ollama가 오래되어 JSON 스키마 `format`을 지원하지 않는 것이니 최신으로 업데이트한다.
 
+### 첫 실제 시험 결과 (Qwen2.5-7B-Instruct, `auth-pg-hba-conf` 10조항, 프롬프트 v1)
+- 처리량: 10조항 56초(평균 5.6초, 최대 11.6초), 프롬프트 1,187 토큰/조항, 실패 0, 재시도 2건. **217조항 전체 약 20분.**
+- 근거 인용 검증: 항목 12개 중 11개 통과(91.7%).
+- **발견한 문제와 조치(프롬프트 v2, 스키마 v2)**
+
+| 문제 | 조치 |
+|---|---|
+| 문서에 없는 위험도(`medium`)를 모델이 추정, 그대로 두면 `risk_source=document`로 잘못 기록됨 | `risk_quote` 필드 추가. **위험도는 그 인용이 원문에서 검증될 때만 인정**하고, 아니면 `not_stated`로 내려 `risk_level_claimed`에 기록 |
+| `The default behavior…`가 원문의 `…since the default behavior…`와 첫 글자 대소문자만 달라 3회 시도 모두 반려 | 인용 비교에서 **대소문자 무시** |
+| "pg_hba.conf file is correctly configured", 조치 "Ensure … correctly specified" 같은 공허한 항목, 문법만 설명하는 조항(`database`, `user`, `address`)에서 항목 생성 | 프롬프트 규칙 추가: 문법·형식 설명은 빈 결과, 제목은 구체적 조건(`correctly` 등 금지), 조치는 제목의 반복 금지, 예시 2개(항목 있음/없음) |
+| `target`을 모델이 지어냄(원문에 없음, 3건) | `target`은 원문의 식별자 하나를 그대로 복사 (검증은 계속 비차단 신호) |
+
+- **글자 붙음**(`determinesthe`, `moreinformation`, `risk=mediumverified`)은 데이터 문제가 아니라 **터미널 자동 줄바꿈 위치에서 복사할 때 줄 끝 공백이 빠지는 현상**일 가능성이 크다(코드가 공백 두 칸을 넣는 `risk=… {mark}`에서도 같은 현상이 보였다).
+- 한계(규칙으로 해결 불가): 인용이 원문에 **있어도** 항목을 뒷받침하지 않을 수 있다(예: 인용은 `pg_hba_file_rules` 뷰를 설명하는데 제목은 "monitored for changes"). 이는 사람 검수(2.5)로 걸러내고 승인율로 측정한다.
+
 ### 이 환경에서 검증한 것과 못 한 것
 - 검증: 재시도·피드백, 인용 검증, 이어하기, 오래된 결과 처리, 역할 권한을 **스크립트로 재생한 가짜 모델**로 테스트했다(143개). 변이 테스트로
   "모든 항목을 검증됨 처리", "재시도 제거", "이어하기 무시"를 각각 테스트가 잡는 것을 확인했다. 가짜 Ollama HTTP 서버로 CLI(`llm check`, `extract run/show/stats`)도 끝까지 확인했다.

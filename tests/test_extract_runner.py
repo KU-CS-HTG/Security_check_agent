@@ -17,7 +17,7 @@ def item(**over):
     base = {"title": "Connection logging is enabled", "category": "logging_audit",
             "target": "log_connections", "check_method": "", "recommended_value": "",
             "remediation": "", "risk_level": "not_stated", "evidence_quote": Q,
-            "remediation_quote": ""}
+            "remediation_quote": "", "risk_quote": ""}
     base.update(over)
     return base
 
@@ -135,3 +135,53 @@ def test_attempt_limit_is_respected(attempts):
     llm = FakeLlm(*(["bad"] * 5))
     run(llm, max_attempts=attempts)
     assert len(llm.calls) == attempts
+
+
+def test_capitalised_quote_of_mid_sentence_text_is_still_a_faithful_quote():
+    # real case: the model wrote "The default ..." for "..., since the default ..."
+    text = ("Remote TCP/IP connections will not be possible unless the server is started with an "
+            "appropriate value for listen_addresses, since the default behavior is to listen for "
+            "TCP/IP connections only on the local loopback address localhost.")
+    quote = ("The default behavior is to listen for TCP/IP connections only on the local loopback "
+             "address localhost.")
+    evidence = "Remote TCP/IP connections will not be possible unless the server is started"
+    bad = item(target="listen_addresses", evidence_quote=evidence,
+               remediation="Set listen_addresses.", remediation_quote=quote)
+    out = extract_clause(FakeLlm(answer(bad)), doc_title=None, heading_path=["host"],
+                         source_url="u", text=text, max_attempts=1)
+    assert out.items[0].verified and out.items[0].remediation_match == "exact"
+
+
+def test_risk_is_kept_only_with_a_verified_quote():
+    sentence = ("Only superusers and users with the appropriate SET privilege can change this "
+                "setting.")
+    stated = item(risk_level="high", risk_quote=sentence)
+    out = run(FakeLlm(answer(stated)))
+    p = out.items[0].payload
+    assert (p["risk_level"], p["risk_verified"]) == ("high", True) and "risk_level_claimed" not in p
+
+
+def test_a_guessed_risk_is_dropped_and_recorded():
+    guessed = item(risk_level="medium")                       # no quote at all
+    wrong = item(risk_level="high", risk_quote="This setting can lead to complete data loss.")
+    for it in (guessed, wrong):
+        out = run(FakeLlm(answer(it)))
+        p = out.items[0].payload
+        assert (p["risk_level"], p["risk_level_claimed"], p["risk_verified"]) == (
+            "not_stated", it["risk_level"], False)
+        assert out.items[0].verified          # the item itself is fine, only the risk is dropped
+        assert out.status == "ok" and out.attempts == 1       # no retry for an unsupported risk
+
+
+def test_not_stated_risk_needs_nothing():
+    p = run(FakeLlm(answer(item()))).items[0].payload
+    assert p["risk_level"] == "not_stated" and "risk_verified" not in p
+
+
+def test_prompt_forbids_the_failure_modes_seen_in_the_first_real_run():
+    from opsgraph.extract.prompt import PROMPT_VERSION, SYSTEM
+
+    assert PROMPT_VERSION == "2"
+    for phrase in ("Never guess a risk", '"correctly"', "only explains syntax", "ONE identifier",
+                   "must not merely restate the title"):
+        assert phrase in SYSTEM

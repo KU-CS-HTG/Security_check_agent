@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 CATEGORIES = (
     "account_management",    # roles, passwords, privileges of accounts
@@ -46,6 +46,7 @@ class CheckItemDraft(BaseModel):
     risk_level: Risk = "not_stated"
     evidence_quote: str = Field(min_length=20, max_length=600)
     remediation_quote: str = Field(default="", max_length=600)
+    risk_quote: str = Field(default="", max_length=600)
 
     @field_validator("*", mode="before")
     @classmethod
@@ -75,9 +76,11 @@ def json_schema() -> dict:
             "risk_level": {"type": "string", "enum": list(RISK_LEVELS)},
             "evidence_quote": _str(600, "exact copy of 1-2 consecutive sentences of the clause"),
             "remediation_quote": _str(600, "exact copy supporting the remediation, else empty"),
+            "risk_quote": _str(600, "exact copy of the sentence stating the risk, else empty"),
         },
         "required": ["title", "category", "target", "check_method", "recommended_value",
-                     "remediation", "risk_level", "evidence_quote", "remediation_quote"],
+                     "remediation", "risk_level", "evidence_quote", "remediation_quote",
+                     "risk_quote"],
     }
     return {"type": "object",
             "properties": {"items": {"type": "array", "items": item, "maxItems": 12}},

@@ -124,7 +124,7 @@ def test_changed_clause_text_or_model_or_prompt_makes_results_stale(engines):
     other_model = run_extraction(pipeline, FakeLlm(answer(), answer()), model="other", min_chars=20)
     assert other_model.selected == 2
     other_prompt = run_extraction(pipeline, FakeLlm(answer(), answer()), model=MODEL, min_chars=20,
-                                  prompt_version="2")
+                                  prompt_version="9")
     assert other_prompt.selected == 2
     with collector.begin() as c:   # the page changes: same clause ids, new text
         repo.upsert_web_page(c, url=URL, source_id="postgresql-docs", http_status=200,
@@ -172,3 +172,17 @@ def test_collector_and_reader_roles_cannot_write_extractions(settings, engines):
     collector, _ = engines
     with pytest.raises(ProgrammingError), collector.begin() as c:
         c.execute(text("DELETE FROM core.extracted_item"))
+
+
+def test_risk_source_is_document_only_when_the_risk_was_verified(engines):
+    _, pipeline = engines
+    sentence = "Do not use trust unless you trust every user on the machine."  # in the clause
+    kept = good(risk_level="high", risk_quote=sentence, title="Risk with quote")
+    dropped = good(risk_level="high", title="Risk without quote")
+    run_extraction(pipeline, FakeLlm(answer(kept, dropped), answer()), model=MODEL, min_chars=20)
+    with pipeline.connect() as c:
+        rows = c.execute(text(
+            "SELECT payload->>'title' AS item_title, payload->>'risk_level' AS r, risk_source "
+            "FROM core.extracted_item ORDER BY id")).all()
+    assert [(r.item_title, r.r, r.risk_source) for r in rows] == [
+        ("Risk with quote", "high", "document"), ("Risk without quote", "not_stated", None)]

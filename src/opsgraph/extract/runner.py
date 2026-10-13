@@ -60,6 +60,15 @@ class Outcome:
 
 def check_item(payload: dict, clause_text: str, heading_path: list[str]) -> CheckedItem:
     rem = payload.get("remediation_quote") or ""
+    payload = dict(payload)
+    claimed = payload["risk_level"]
+    if claimed != "not_stated":
+        risk_quote = payload.get("risk_quote") or ""
+        supported = bool(risk_quote) and match_quote(clause_text, risk_quote) is not None
+        payload["risk_verified"] = supported
+        if not supported:  # a severity the clause does not state is the model's guess: drop it
+            payload["risk_level"] = "not_stated"
+            payload["risk_level_claimed"] = claimed
     return CheckedItem(
         payload=payload,
         evidence_match=match_quote(clause_text, payload["evidence_quote"]),
