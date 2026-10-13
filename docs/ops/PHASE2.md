@@ -107,6 +107,24 @@ python -m opsgraph docs show runtime-config-logging --full   # 본문을 사이�
 - 조항 목록에서 `log_connections (boolean)` 같은 제목 경로와 `#GUC-…` 앵커가 보이는지 확인한다.
 - 한계: 용어 목록이 아닌 긴 산문 절(예: `continuous-archiving`)은 여전히 문단 경계에서 크기 기준으로 나뉜다.
 
+### 2.2 실제 결과 (24쪽 → 217조항, 오류 0)와 파서 v3
+`docs parse`(v2)의 결과: `runtime-config-logging` 44조항(설정 하나당 하나), `runtime-config-connection` 39조항, `auth-pg-hba-conf` 32조항,
+`ddl-priv` 16조항, 최장 조항 5,808자. 조항의 출처 URL이 `…#GUC-LOG-CONNECTIONS`처럼 설정 단위 앵커를 가진다(용어 요소의 `id` 사용).
+
+v3 변경:
+- 용어(`dt`)가 연속되고 설명(`dd`)이 하나인 경우 하나의 조항으로 묶는다(설명 없는 조항 방지).
+- `docs parse`는 코퍼스 설정(`docs_corpus.yaml`)에 더 이상 없는 문서를 `core`에서 제거한다(raw는 건드리지 않음). `default-roles`(373자, 안내 페이지)를 코퍼스에서 뺐다.
+
+미해결(확인 중): 일부 문장에서 단어가 붙어 보인다(`determinesthe`, `thesame`, `Thisparameter`, `Section 27.1for`).
+정상 공백(줄바꿈, CRLF, NBSP, 인라인 뒤 줄바꿈)은 파서가 공백 하나로 바꾸는 것을 테스트로 확인했다.
+따라서 원문에 **보이지 않는 문자(제로폭 공백, 소프트 하이픈 등)**가 있는지 실제 바이트를 확인해야 한다:
+```sql
+SELECT encode(convert_to(substr(text, position('determines' in text) + 8, 8), 'UTF8'), 'hex') AS hex,
+       substr(text, position('determines' in text), 22) AS snippet
+FROM core.clause WHERE key = 'GUC-LOG-ROTATION-SIZE';
+```
+(`20`이면 정상 공백, `e2808b`는 제로폭 공백, `c2ad`는 소프트 하이픈.)
+
 ## 알려진 한계
 1. **파서는 실제 페이지 1건(CVE-2022-1552)의 출력으로 맞췄다.** 이 환경에서는 postgresql.org에 접속할 수 없다. 다른 연도·형식의 페이지는 `normalize pg`의 필드별 성공률과 `score_mismatch`로 확인하고, 낮은 필드는 `inspect-page` 출력으로 조정한다.
 2. Debian·Alpine·GIT 레코드는 CVSS 정보가 없을 수 있어 `severity_label`이 NULL인 비율이 높을 수 있다(정상). 심각도 보강은 이후 PostgreSQL 공지의 CVSS와 연결해서 한다.

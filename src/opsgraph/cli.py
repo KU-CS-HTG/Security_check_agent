@@ -186,7 +186,8 @@ def docs_parse(force: Force = False, limit: Limit = None) -> None:
     from opsgraph.normalize.docs import doc_report, normalize_docs
 
     engine = make_engine(get_settings(), "pipeline")
-    stats = normalize_docs(engine, load_sources().license_policy, force=force, limit=limit)
+    stats = normalize_docs(engine, load_sources().license_policy, force=force, limit=limit,
+                           keep_urls=set(load_docs_corpus().urls()))
     typer.echo(json.dumps(stats.as_dict(), ensure_ascii=False, indent=2))
     typer.echo("\nper page (clauses / chars / longest clause):")
     for r in doc_report(engine):

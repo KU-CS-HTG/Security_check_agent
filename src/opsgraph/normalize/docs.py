@@ -24,7 +24,7 @@ from opsgraph.storage.repository import canonical_hash
 log = get_logger(__name__)
 
 # bump when parsing/splitting rules change: stored documents are then rebuilt automatically
-PARSER_VERSION = "2"
+PARSER_VERSION = "3"
 MAX_CLAUSE_CHARS = 6000
 # a section longer than this that contains definition-list terms is split per term (one clause
 # per documented setting), so a clause maps to one checkable thing and one citable anchor
@@ -203,7 +203,11 @@ def _term_units(blocks: list[Block]) -> tuple[list[Block], list[list[Block]]]:
     units: list[list[Block]] = []
     for b in blocks:
         if b.kind == "term":
-            units.append([b])
+            # consecutive terms share the description that follows them (<dt>a</dt><dt>b</dt><dd>)
+            if units and all(x.kind == "term" for x in units[-1]):
+                units[-1].append(b)
+            else:
+                units.append([b])
         elif units:
             units[-1].append(b)
         else:
@@ -221,7 +225,8 @@ def _expand(path: list[str], anchor: str | None, blocks: list[Block], max_chars:
             yield from _size_parts(base, path, anchor, lead, max_chars)
         for unit in units:
             term = unit[0]
-            tpath = [*path, term.text[:MAX_TERM_PATH_CHARS]]
+            terms = " ".join(b.text for b in unit if b.kind == "term")
+            tpath = [*path, terms[:MAX_TERM_PATH_CHARS]]
             tkey = term.anchor or f"{base}/{_slug(term.text)}"
             yield from _size_parts(tkey, tpath, term.anchor or anchor, unit, max_chars)
     else:
@@ -286,6 +291,7 @@ class DocsStats:
     documents_inserted: int = 0
     documents_updated: int = 0
     documents_unchanged: int = 0
+    documents_removed: int = 0
     clauses_inserted: int = 0
     clauses_updated: int = 0
     clauses_unchanged: int = 0
@@ -303,12 +309,24 @@ def _doc_version(url: str) -> str | None:
 
 
 def normalize_docs(engine: Engine, policy: LicensePolicy, *, force: bool = False,
-                   limit: int | None = None) -> DocsStats:
+                   limit: int | None = None, keep_urls: set[str] | None = None) -> DocsStats:
+    """keep_urls: the pages the corpus config currently lists. Documents of this source that are
+    no longer listed are removed from core (their raw pages stay untouched)."""
     stats = DocsStats()
     with engine.begin() as conn:
+        if keep_urls is not None:
+            stale = [r.url for r in conn.execute(
+                text("SELECT url FROM core.document WHERE source_id = :s"), {"s": SOURCE_LABEL})
+                if r.url not in keep_urls]
+            for url in stale:
+                conn.execute(text("DELETE FROM core.document WHERE url = :u"), {"u": url})
+                stats.documents_removed += 1
+                stats.notes.append(f"removed (not in corpus config): {url}")
         pages = conn.execute(text("""
             SELECT url, body, content_hash, license, collected_at FROM raw.web_page
             WHERE source_id = :s ORDER BY url"""), {"s": SOURCE_LABEL}).mappings().all()
+        if keep_urls is not None:
+            pages = [p for p in pages if p["url"] in keep_urls]
         done = 0
         for page in pages:
             if limit and done >= limit:

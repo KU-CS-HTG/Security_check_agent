@@ -119,6 +119,20 @@ def test_clause_ids_survive_rebuilds_and_follow_content_changes(engines, monkeyp
     assert set(clause_ids(pipeline)) == {"AUTH-PG-HBA-CONF"}
 
 
+def test_documents_no_longer_in_the_corpus_are_removed_from_core(engines):
+    collector, pipeline = engines
+    put(collector, HBA, SECTION)
+    put(collector, f"{BASE}/default-roles.html", CHAPTER)
+    normalize_docs(pipeline, POLICY, keep_urls={HBA, f"{BASE}/default-roles.html"})
+    assert one(pipeline, "SELECT count(*) FROM core.document") == 2
+    s = normalize_docs(pipeline, POLICY, keep_urls={HBA})
+    assert s.documents_removed == 1 and s.documents_unchanged == 1
+    assert one(pipeline, "SELECT count(*) FROM core.document") == 1
+    assert one(pipeline, "SELECT count(*) FROM core.clause c JOIN core.document d "
+                         "ON d.id = c.document_id WHERE d.url LIKE '%default-roles%'") == 0
+    assert one(pipeline, "SELECT count(*) FROM raw.web_page") == 2  # raw is never touched
+
+
 def test_page_without_clauses_is_reported(engines):
     collector, pipeline = engines
     put(collector, f"{BASE}/empty.html", "<html><body><div id='docContent'></div></body></html>")

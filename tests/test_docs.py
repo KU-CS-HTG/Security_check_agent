@@ -157,3 +157,19 @@ def test_inline_markup_does_not_add_spaces_before_punctuation():
     assert doc.title == "1. Using trust, safely"
     # a <br> is whitespace (paragraphs are single lines), never glued text
     assert doc.clauses[0].text == "Use trust, or md5. See the docs. Next line (boolean)."
+
+
+def test_consecutive_terms_share_the_following_description():
+    items = ""
+    for i in range(3):
+        items += (f'<dt id="GUC-A{i}"><span class="term">a_{i} (boolean)</span></dt>'
+                  f'<dt id="GUC-B{i}"><span class="term">b_{i} (boolean)</span></dt>'
+                  f'<dd><p>{"Shared description. " * 60}</p></dd>')
+    html = ('<div id="docContent"><div class="sect1" id="S"><div class="titlepage"><div><div>'
+            f'<h2 class="title">1. S</h2></div></div></div><dl>{items}</dl></div></div>')
+    doc = parse_doc(html, URL)
+    assert [c.key for c in doc.clauses] == ["GUC-A0", "GUC-A1", "GUC-A2"]
+    first = doc.clauses[0]
+    assert first.text.startswith("a_0 (boolean)\nb_0 (boolean)\nShared description.")
+    assert first.heading_path[-1] == "a_0 (boolean) b_0 (boolean)"
+    assert all("Shared description." in c.text for c in doc.clauses)  # no term without text
