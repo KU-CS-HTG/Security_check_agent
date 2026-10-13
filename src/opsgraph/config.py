@@ -14,7 +14,7 @@ from sqlalchemy.engine import URL
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
 
-DbRole = Literal["owner", "collector", "reader"]
+DbRole = Literal["owner", "collector", "reader", "pipeline"]
 
 
 class Settings(BaseSettings):
@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     db_collector_password: str = ""
     db_reader_user: str = "og_reader"
     db_reader_password: str = ""
+    db_pipeline_user: str = "og_pipeline"
+    db_pipeline_password: str = ""
 
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"

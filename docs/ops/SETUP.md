@@ -37,5 +37,14 @@ docker compose ps                                                               
 ```
 Neo4j 브라우저: http://localhost:7474 (loopback 전용). 초기화 스크립트를 다시 실행하려면 `docker compose down -v`(데이터 삭제).
 
+## 4-1. 기존 DB에 pipeline 역할 추가 (Phase 2부터)
+이미 DB를 만든 경우(초기화 스크립트는 빈 볼륨에서만 실행됨):
+```bash
+bash scripts/init_env.sh --fill-missing      # .env에 DB_PIPELINE_* 추가
+docker compose up -d postgres                # 새 환경변수로 컨테이너 재생성(데이터 유지)
+python -m opsgraph db upgrade                # core.alembic_version이 있어야 함
+bash scripts/add_roles.sh                    # 멱등
+```
+
 ## 5. 출처 조사 (승인 게이트)
 `docs/sources/SOURCES.md`의 절차대로 `python scripts/probe_sources.py --contact 이메일`을 실행한다.

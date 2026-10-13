@@ -30,7 +30,9 @@ def connect(settings: Settings, role: str, **kw):
 @pytest.fixture(scope="module")
 def settings():
     s = Settings(_env_file=".env") if os.path.exists(".env") else Settings()
-    if not (s.db_owner_password and s.db_collector_password and s.db_reader_password):
+    needed = (s.db_owner_password, s.db_collector_password, s.db_reader_password,
+              s.db_pipeline_password)
+    if not all(needed):
         pytest.skip("DB role passwords not configured")
     try:
         connect(s, "owner").close()
@@ -68,6 +70,17 @@ def run(settings, role, sql):
         ("reader", "SELECT * FROM core.{t}", True),
         ("reader", "INSERT INTO raw.{t}(v) VALUES ('z')", False),
         ("reader", "CREATE TABLE public.zz(i int)", False),
+        # pipeline: reads raw, writes (incl. deletes) core, never touches raw or the schema
+        ("pipeline", "SELECT * FROM raw.{t}", True),
+        ("pipeline", "INSERT INTO raw.{t}(v) VALUES ('p')", False),
+        ("pipeline", "UPDATE raw.{t} SET v='p'", False),
+        ("pipeline", "DELETE FROM raw.{t}", False),
+        ("pipeline", "INSERT INTO core.{t} VALUES (1)", True),
+        ("pipeline", "UPDATE core.{t} SET id = 2", True),
+        ("pipeline", "DELETE FROM core.{t}", True),
+        ("pipeline", "CREATE TABLE core.zz(i int)", False),
+        ("pipeline", "DELETE FROM core.alembic_version", False),
+        ("pipeline", "UPDATE core.alembic_version SET version_num = 'x'", False),
     ],
 )
 def test_privilege_matrix(settings, table, role, sql_tpl, allowed):

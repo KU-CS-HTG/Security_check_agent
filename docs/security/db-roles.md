@@ -9,11 +9,13 @@
 | `og_owner` | 마이그레이션 | 소유 | 소유 | 가능 | 스키마 소유자 |
 | `og_collector` | 수집기 | SELECT, INSERT, UPDATE | 접근 불가 | 불가 | **DELETE 불가**(원본 보존) |
 | `og_reader` | 질의 계층 | SELECT | SELECT | 불가 | 읽기 전용 |
+| `og_pipeline` | 파싱·추출·검수(Phase 2~) | SELECT | SELECT, INSERT, UPDATE, **DELETE** | 불가 | core는 재생성 가능한 파생 데이터라 DELETE 허용. `core.alembic_version`은 쓰기 불가 |
 | `og_airflow` | Airflow 메타데이터 | 접근 불가 | 접근 불가 | 자기 DB만 | 별도 DB `airflow` |
 
 - `REVOKE ALL ON DATABASE ... FROM PUBLIC`, `REVOKE CREATE ON SCHEMA public FROM PUBLIC`.
 - 새 테이블 권한은 `ALTER DEFAULT PRIVILEGES FOR ROLE og_owner`로 자동 부여된다 → 마이그레이션은 반드시 `og_owner`로 실행해야 한다.
-- 검증: `pytest -m integration`의 권한 매트릭스(허용 5, 거부 4)로 확인한다.
+- 검증: `pytest -m integration`의 권한 매트릭스(허용/거부 19개 케이스, pipeline 포함)로 확인한다.
+- 기존 DB에 역할을 추가할 때는 `bash scripts/add_roles.sh`(멱등, 비밀번호 동기화 포함). 마이그레이션은 `core.alembic_version`에서 pipeline의 쓰기 권한을 매번 회수한다.
 - 초기화 스크립트(`docker/postgres/init/01-roles.sh`)는 **빈 데이터 볼륨의 첫 기동 때만** 실행된다. 비밀번호를 바꾸려면 `ALTER ROLE`로 변경하거나 볼륨을 재생성한다(절차는 운영 매뉴얼).
 
 ## Neo4j Community의 한계 (ADR-0002)

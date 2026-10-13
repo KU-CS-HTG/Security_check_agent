@@ -1,6 +1,6 @@
 # Embedding / LLM providers. Default is LOCAL so query/embedding/extraction run without
 # external network (air-gap assumption). Switching to an external API requires an explicit opt-in.
-# Concrete model names are intentionally unset: decided via ADR in Phase 2 / Phase 4.
+# llm: decided in ADR-0005 (Qwen2.5-7B-Instruct via Ollama). embedding: still open (Phase 4).
 allow_external: false
 embedding:
   provider: local            # local | api
@@ -9,5 +9,5 @@ embedding:
 llm:
   provider: local
   endpoint: http://localhost:11434
-  model: null
+  model: qwen2.5:7b-instruct   # Ollama tag; confirm with `ollama list` after `ollama pull`
   temperature: 0.0

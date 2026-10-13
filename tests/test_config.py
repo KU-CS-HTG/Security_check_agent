@@ -20,6 +20,7 @@ def test_repo_configs_load():
     m = load_models()
     assert m.embedding.provider == "local" and m.llm.provider == "local"
     assert m.allow_external is False
+    assert m.llm.model == "qwen2.5:7b-instruct" and m.llm.temperature == 0.0
 
 
 def test_unapproved_source_is_refused():
