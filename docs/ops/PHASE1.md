@@ -48,7 +48,7 @@ SELECT count(*), count(DISTINCT url) FROM raw.web_page;   -- 두 값이 같아�
 pytest                       # 단위 + (DB가 있으면) 통합. 네트워크 불필요, HTTP는 모킹
 pytest -m integration        # DB 필요: docker compose up 후 python -m opsgraph db upgrade
 ```
-통합 테스트는 `TRUNCATE`를 쓰므로 **개발 DB에서만** 실행한다(실데이터가 있으면 지워진다).
+수집기 통합 테스트(`tests/test_collectors_db.py`)는 `raw.*`를 `TRUNCATE`하므로 **일회용 DB에서만**, 환경변수 `OPSGRAPH_ALLOW_TRUNCATE=1`을 명시했을 때만 실행된다. 이 변수가 없으면 건너뛴다(실데이터 보호). 권한 테스트(`test_db_roles.py`)는 임시 테이블만 쓰므로 안전하다.
 
 ## 실서버 검증 기록 (2026-10-13, 개발 PC)
 | 항목 | 결과 |

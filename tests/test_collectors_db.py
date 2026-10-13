@@ -1,5 +1,9 @@
-"""Collectors against a real PostgreSQL (roles from docker/postgres/init/01-roles.sh, schema from
+"""DESTRUCTIVE: truncates raw.* tables; runs only with OPSGRAPH_ALLOW_TRUNCATE=1.
+
+Collectors against a real PostgreSQL (roles from docker/postgres/init/01-roles.sh, schema from
 `alembic upgrade head`). HTTP is mocked, so no internet is needed. Marked integration."""
+
+import os
 
 import httpx
 import pytest
@@ -30,6 +34,10 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture(scope="module")
 def settings():
+    # These tests TRUNCATE the raw tables. Never let them touch a database holding real data
+    # unless the caller opted in explicitly.
+    if os.environ.get("OPSGRAPH_ALLOW_TRUNCATE") != "1":
+        pytest.skip("destructive DB tests: set OPSGRAPH_ALLOW_TRUNCATE=1 (disposable DB only)")
     s = Settings()
     if not (s.db_owner_password and s.db_collector_password and s.db_reader_password):
         pytest.skip("DB role passwords not configured")
