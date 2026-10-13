@@ -11,7 +11,11 @@ VERSION_SCHEMA = "core"
 
 
 def run_migrations() -> None:
-    engine = create_engine(get_settings().sqlalchemy_url("owner"), poolclass=pool.NullPool)
+    engine = create_engine(
+        get_settings().sqlalchemy_url("owner"),
+        poolclass=pool.NullPool,
+        connect_args={"connect_timeout": 10},
+    )
     with engine.connect() as conn:
         context.configure(
             connection=conn,

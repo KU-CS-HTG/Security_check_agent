@@ -82,3 +82,11 @@ def test_postgresql_url_rules_follow_robots():
     assert pg.url_allowed("https://www.postgresql.org/docs/16/index.html")
     assert not pg.url_allowed("https://www.postgresql.org/docs/devel/index.html")
     assert not pg.url_allowed("https://www.postgresql.org/list/")
+
+
+def test_library_loggers_quiet_unless_debug():
+    import logging
+
+    configure_logging("INFO")
+    assert logging.getLogger("httpx").level == logging.WARNING
+    configure_logging("INFO")  # restore default handlers for the other tests

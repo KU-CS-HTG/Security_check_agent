@@ -35,6 +35,11 @@ def configure_logging(level: str = "INFO") -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level.upper())
+    # Library chatter (every HTTP request, alembic plugin setup) only at DEBUG; our own events
+    # (http_retry, collection_finished, ...) are logged by the opsgraph loggers.
+    if level.upper() != "DEBUG":
+        for noisy in ("httpx", "httpcore", "alembic"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:

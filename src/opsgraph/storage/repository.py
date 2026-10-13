@@ -54,7 +54,11 @@ def canonical_hash(obj: Any) -> str:
 
 
 def make_engine(settings: Settings, role: str = "collector") -> Engine:
-    return create_engine(settings.sqlalchemy_url(role), pool_pre_ping=True)  # type: ignore[arg-type]
+    return create_engine(
+        settings.sqlalchemy_url(role),
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10},  # fail fast instead of hanging on a bad address
+    )
 
 
 _OSV_UPSERT = text(
