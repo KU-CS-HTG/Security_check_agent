@@ -23,6 +23,9 @@ from opsgraph.storage.repository import canonical_hash
 
 log = get_logger(__name__)
 
+# bump when the normalization rules change: stored rows are then rebuilt automatically
+NORMALIZER_VERSION = "1"
+
 _DB_SEVERITY = {"LOW": "LOW", "MODERATE": "MEDIUM", "MEDIUM": "MEDIUM", "IMPORTANT": "HIGH",
                 "HIGH": "HIGH", "CRITICAL": "CRITICAL"}
 
@@ -161,8 +164,8 @@ def normalize_osv(engine: Engine, policy: LicensePolicy, *, force: bool = False,
                 break
             stats.processed += 1
             canonical = group[0]
-            raw_hash = canonical_hash(sorted((r["export_ecosystem"], r["content_hash"])
-                                             for r in group))
+            raw_hash = canonical_hash([NORMALIZER_VERSION, sorted(
+                (r["export_ecosystem"], r["content_hash"]) for r in group)])
             if osv_id in existing and existing[osv_id] == raw_hash and not force:
                 stats.unchanged += 1
                 continue

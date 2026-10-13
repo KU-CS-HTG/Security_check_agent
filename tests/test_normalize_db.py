@@ -10,7 +10,7 @@ import os
 import pytest
 from osv_fixtures import DEB_NGINX, DEB_PG, rec
 from sqlalchemy import create_engine, text
-from test_normalize import PAGE_INLINE, PAGE_SPARSE, PAGE_TABLE
+from test_normalize import PAGE_LEGACY, PAGE_REAL, PAGE_SPARSE
 
 from opsgraph.collectors.osv import parse_ts
 from opsgraph.config import Settings, load_sources
@@ -143,8 +143,8 @@ def test_osv_one_bad_record_does_not_stop_the_run(engines):
 
 def test_pg_pages_end_to_end_and_coverage(engines):
     collector, pipeline, _ = engines
-    put_page(collector, "CVE-2024-0985", PAGE_INLINE)
-    put_page(collector, "CVE-2022-1552", PAGE_TABLE)
+    put_page(collector, "CVE-2024-0985", PAGE_LEGACY)
+    put_page(collector, "CVE-2022-1552", PAGE_REAL)
     put_page(collector, "CVE-2019-0001", PAGE_SPARSE)
     with collector.begin() as c:  # the index page is stored too, but is not an advisory
         repo.upsert_web_page(c, url=f"{BASE}/", source_id="postgresql", http_status=200,
@@ -153,20 +153,40 @@ def test_pg_pages_end_to_end_and_coverage(engines):
     s1 = normalize_pg_advisories(pipeline, POLICY)
     assert (s1.processed, s1.inserted, s1.errors) == (3, 3, 0)
     with pipeline.connect() as c:
-        row = c.execute(text("SELECT * FROM core.pg_advisory WHERE cve_id='CVE-2024-0985'")
+        row = c.execute(text("SELECT * FROM core.pg_advisory WHERE cve_id='CVE-2022-1552'")
                         ).mappings().one()
-    assert row["fixed_versions"] == ["16.2", "15.6", "14.11", "13.14", "12.18"]
-    assert float(row["cvss_score"]) == 8.0 and row["publishable"] is True
-    assert row["source_url"] == f"{BASE}/CVE-2024-0985/"
+        versions = c.execute(text("SELECT affected_major, fixed_in, fix_published "
+                                  "FROM core.pg_advisory_version WHERE cve_id='CVE-2022-1552' "
+                                  "ORDER BY ordinal")).all()
+    assert row["fixed_versions"] == ["14.3", "13.7", "12.11", "11.16", "10.21"]
+    assert float(row["cvss_score"]) == 8.8 and row["cvss_version"] == "3.0"
+    assert row["publishable"] is True and row["source_url"] == f"{BASE}/CVE-2022-1552/"
+    assert [(v[0], v[1], str(v[2])) for v in versions][-1] == ("10", "10.21", "2022-05-12")
+    assert len(versions) == 5
 
     cov = parse_coverage(pipeline)
-    assert cov["title"] == (3, 3) and cov["fixed"] == (2, 3) and cov["cvss_vector"] == (1, 3)
+    assert cov["title"] == (3, 3) and cov["fixed"] == (2, 3) and cov["cvss_vector"] == (2, 3)
+    assert cov["version_table"] == (1, 3) and cov["score_mismatch (should be 0)"] == (0, 3)
 
     s2 = normalize_pg_advisories(pipeline, POLICY)
     assert (s2.inserted, s2.updated, s2.unchanged) == (0, 0, 3)
-    put_page(collector, "CVE-2019-0001", PAGE_SPARSE.replace("old", "older"))
+    assert scalar(pipeline, "SELECT count(*) FROM core.pg_advisory_version") == 5  # no duplicates
+    put_page(collector, "CVE-2022-1552", PAGE_REAL.replace("14.3", "14.4"))
     s3 = normalize_pg_advisories(pipeline, POLICY)
     assert (s3.updated, s3.unchanged) == (1, 2)
+    assert scalar(pipeline, "SELECT count(*) FROM core.pg_advisory_version") == 5  # replaced
+    assert scalar(pipeline, "SELECT fixed_in FROM core.pg_advisory_version "
+                            "WHERE cve_id='CVE-2022-1552' AND ordinal=0") == "14.4"
+
+
+def test_parser_version_change_triggers_rebuild(engines, monkeypatch):
+    collector, pipeline, _ = engines
+    put_page(collector, "CVE-2022-1552", PAGE_REAL)
+    assert normalize_pg_advisories(pipeline, POLICY).inserted == 1
+    assert normalize_pg_advisories(pipeline, POLICY).unchanged == 1
+    from opsgraph.normalize import pg_advisory
+    monkeypatch.setattr(pg_advisory, "PARSER_VERSION", "next")
+    assert normalize_pg_advisories(pipeline, POLICY).updated == 1  # raw unchanged, rules changed
 
 
 def test_pipeline_role_cannot_touch_raw(engines):

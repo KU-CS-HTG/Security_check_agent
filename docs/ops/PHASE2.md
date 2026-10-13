@@ -52,7 +52,22 @@ ORDER BY v.modified DESC LIMIT 20;
 SELECT cve_id, fixed_versions, cvss_score, parse_flags FROM core.pg_advisory ORDER BY cve_id;
 ```
 
+## PostgreSQL 공지 파서: 실제 페이지로 확인한 구조 (CVE-2022-1552)
+첫 실행에서 필드 성공률이 높아 보였지만(수정 버전 3/3), 실제 페이지 출력을 확인하니 **값이 틀려 있었다**(마지막 행 10.21 누락,
+인라인 코드 표기로 문장이 조각남). 아래 구조에 맞춰 파서를 다시 썼다(`PARSER_VERSION = "2"`).
+
+| 페이지 요소 | 처리 |
+|---|---|
+| `CVE-xxxx-xxxx` 제목 + 바로 뒤의 짧은 제목 | `title = "CVE-…: 짧은 제목"` |
+| 라벨 없는 본문 문단(제목~"Version Information" 사이) | `description` (문단 단위, 인라인 `<code>`·`<a>`는 문장에 합침) |
+| "Version Information" 표(Affected Version / Fixed In / Fix Published) | `core.pg_advisory_version` 행(메이저 버전 → 수정 마이너 버전, 날짜), `fixed_versions` |
+| "CVSS 3.0" 아래 Overall Score / Component / Vector | 점수, 컴포넌트, 벡터(접두사 `CVSS:3.0/`를 붙여 완성). 점수와 벡터 계산값이 다르면 `cvss_score_matches_vector=false` |
+| "Reporting Security Vulnerabilities…" | 사이트 안내문이라 본문에서 제외 |
+
+- 파서 규칙을 바꾸면 `PARSER_VERSION`이 오르고, **raw가 그대로여도 저장된 행이 자동으로 다시 만들어진다**(OSV 정규화도 `NORMALIZER_VERSION`으로 같은 방식).
+- 테스트 샘플 `PAGE_REAL`은 실제 페이지의 텍스트 출력(문구·순서·값)에 맞춰 만든 것이고 **HTML 태그는 추정**이다. 다른 연도의 페이지가 다른 구조일 수 있어, `normalize pg`의 성공률과 `score_mismatch`를 계속 확인한다.
+
 ## 알려진 한계
-1. **PostgreSQL 공지 파서는 실제 페이지로 검증되지 않았다.** 이 환경에서 postgresql.org에 접속할 수 없어, 테스트는 예상한 페이지 형태를 흉내 낸 샘플(3종)로만 했다. `normalize pg`의 **필드별 성공률**이 실제 상태를 보여 준다. 낮은 필드가 있으면 `inspect-page`의 출력(페이지 텍스트 앞 60줄)을 보내 주면 파서를 맞춘다.
+1. **파서는 실제 페이지 1건(CVE-2022-1552)의 출력으로 맞췄다.** 이 환경에서는 postgresql.org에 접속할 수 없다. 다른 연도·형식의 페이지는 `normalize pg`의 필드별 성공률과 `score_mismatch`로 확인하고, 낮은 필드는 `inspect-page` 출력으로 조정한다.
 2. Debian·Alpine·GIT 레코드는 CVSS 정보가 없을 수 있어 `severity_label`이 NULL인 비율이 높을 수 있다(정상). 심각도 보강은 이후 PostgreSQL 공지의 CVSS와 연결해서 한다.
 3. 같은 취약점의 배포판별 항목 통합(Debian의 DSA와 Alpine의 CVE 등)은 Phase 3(그래프)에서 `aliases`로 연결한다.

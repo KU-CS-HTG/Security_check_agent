@@ -87,8 +87,49 @@ def test_normalize_record_structure():
     assert [(x["introduced"], x["fixed"]) for x in open_ended] == [("0", None)]
 
 
-# ---- PostgreSQL advisory pages (synthetic fixtures: shapes the parser is meant to handle) ----
-PAGE_INLINE = """<html><head><title>PostgreSQL: CVE-2024-0985</title></head><body>
+# ---- PostgreSQL advisory pages ----------------------------------------------------------------
+# PAGE_REAL is rebuilt from the parser's text view of the REAL page CVE-2022-1552 (the HTML tags
+# are inferred from that text, the wording, order and values are the page's). The other pages are
+# synthetic shapes for the legacy "Label: value" layout and for a page with almost no structure.
+PAGE_REAL = """<html><head><title>PostgreSQL: Security Information</title></head><body>
+<nav>Home About Download</nav><div id="pgContentWrap">
+<h1>CVE-2022-1552</h1>
+<h2>Autovacuum, REINDEX, and others omit "security restricted operation" sandbox</h2>
+<p><a href="/docs/current/routine-vacuuming.html">Autovacuum</a>,
+<code>REINDEX</code>, <code>CREATE INDEX</code>, <code>REFRESH MATERIALIZED VIEW</code>,
+<code>CLUSTER</code>, and <code>pg_amcheck</code> made incomplete efforts to operate safely when a
+privileged user is maintaining another user's objects. Those commands activated relevant
+protections too late or not at all. An attacker having permission to create non-temp objects in
+at least one schema could execute arbitrary SQL functions under a superuser identity.</p>
+<p>While promptly updating PostgreSQL is the best remediation for most users, a user unable to do
+that can work around the vulnerability by disabling autovacuum, not manually running the above
+commands, and not restoring from output of the <code>pg_dump</code> command. Performance may
+degrade quickly under this workaround. <code>VACUUM</code> is safe, and all commands are fine
+when a trusted user owns the target object.</p>
+<p>The PostgreSQL project thanks Alexander Lakhin for reporting this problem.</p>
+<h3>Version Information</h3>
+<table><thead><tr><th>Affected Version</th><th>Fixed In</th><th>Fix Published</th></tr></thead>
+<tbody>
+<tr><td>14</td><td>14.3</td><td>2022-05-12</td></tr>
+<tr><td>13</td><td>13.7</td><td>2022-05-12</td></tr>
+<tr><td>12</td><td>12.11</td><td>2022-05-12</td></tr>
+<tr><td>11</td><td>11.16</td><td>2022-05-12</td></tr>
+<tr><td>10</td><td>10.21</td><td>2022-05-12</td></tr>
+</tbody></table>
+<p>For more information about <a href="/support/versioning/">PostgreSQL versioning</a>,
+please visit the <a href="/support/versioning/">versioning page</a>.</p>
+<h3>CVSS 3.0</h3>
+<table>
+<tr><th>Overall Score</th><td>8.8</td></tr>
+<tr><th>Component</th><td>core server</td></tr>
+<tr><th>Vector</th><td>AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H</td></tr>
+</table>
+<h3>Reporting Security Vulnerabilities</h3>
+<p>If you wish to report a new security vulnerability in PostgreSQL, please send an email to
+security@postgresql.org. For reporting non-security bugs, please see the Report a Bug page.</p>
+</div><footer>copyright</footer></body></html>"""
+
+PAGE_LEGACY = """<html><head><title>PostgreSQL: CVE-2024-0985</title></head><body>
 <nav>Home About Download</nav><div id="pgContentWrap">
 <h1>CVE-2024-0985: Late privilege drop in REFRESH MATERIALIZED VIEW CONCURRENTLY</h1>
 <p><strong>Versions Affected:</strong> 16, 15, 14, 13, 12</p>
@@ -96,48 +137,65 @@ PAGE_INLINE = """<html><head><title>PostgreSQL: CVE-2024-0985</title></head><bod
 <p><strong>Component:</strong> core server</p>
 <p><strong>Description:</strong> Late privilege drop in REFRESH MATERIALIZED VIEW
 CONCURRENTLY allows an object creator to execute arbitrary SQL functions as the command issuer.</p>
-<p>CVSS v3 Base Score: 8.0</p>
+<p>CVSS v3 Base Score: 8.5</p>
 <p>Vector string: CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H</p>
 </div><footer>copyright</footer></body></html>"""
-
-PAGE_TABLE = """<html><body><div id="pgContentWrap">
-<h2>CVE-2022-1552: Autovacuum, REINDEX, and others omit "security restricted operation"</h2>
-<table>
-<tr><th>Versions affected</th><td>14, 13, 12, 11, 10</td></tr>
-<tr><th>Fixed</th><td>Fixed in 14.3, 13.7, 12.11, 11.16, 10.21</td></tr>
-<tr><th>Description</th><td>Autovacuum, REINDEX, CREATE INDEX, REFRESH MATERIALIZED VIEW,
-CLUSTER, and pg_amcheck made incomplete efforts to operate safely when a privileged user is
-maintaining another user's objects.</td></tr>
-<tr><th>CVSS v3 Base Score</th><td>8.8</td></tr>
-</table></div></body></html>"""
 
 PAGE_SPARSE = """<html><head><title>PostgreSQL: CVE-2019-0001</title></head><body>
 <div id="pgContentWrap"><h1>CVE-2019-0001: Something old</h1>
 <p>Some prose without any labelled fields. The score is 3.1/ in CVSS:3.1/ lists and not a score.</p>
 </div></body></html>"""
 
+REAL_URL = "https://www.postgresql.org/support/security/CVE-2022-1552/"
 
-def test_parse_inline_label_page():
-    p = parse_advisory(PAGE_INLINE, "https://www.postgresql.org/support/security/CVE-2024-0985/")
-    assert p["cve_id"] == "CVE-2024-0985"
+
+def test_parse_real_page_structure():
+    p = parse_advisory(PAGE_REAL, REAL_URL)
+    assert p["cve_id"] == "CVE-2022-1552"
+    assert p["title"] == ('CVE-2022-1552: Autovacuum, REINDEX, and others omit '
+                          '"security restricted operation" sandbox')
+    # inline <code>/<a> are merged into the sentence instead of splitting it into fragments
+    assert p["description"].startswith(
+        "Autovacuum, REINDEX, CREATE INDEX, REFRESH MATERIALIZED VIEW, CLUSTER, and pg_amcheck "
+        "made incomplete efforts")
+    assert "output of the pg_dump command" in p["description"]
+    assert "thanks Alexander Lakhin" in p["description"]
+    assert "Version Information" not in p["description"] and "Reporting" not in p["description"]
+    assert "report a new security vulnerability" not in p["full_text"]  # site footer text cut off
+    assert [(r["affected_major"], r["fixed_in"], str(r["fix_published"]))
+            for r in p["version_rows"]] == [
+        ("14", "14.3", "2022-05-12"), ("13", "13.7", "2022-05-12"), ("12", "12.11", "2022-05-12"),
+        ("11", "11.16", "2022-05-12"), ("10", "10.21", "2022-05-12")]
+    assert p["affected_text"] == "14, 13, 12, 11, 10"
+    assert p["fixed_versions"] == ["14.3", "13.7", "12.11", "11.16", "10.21"]  # 10.21 is not lost
+    assert (p["cvss_version"], p["cvss_score"], p["cvss_score_source"]) == ("3.0", 8.8, "page")
+    assert p["cvss_vector"] == "CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+    assert p["component"] == "core server"
+    assert p["parse_flags"]["cvss_score_matches_vector"] is True
+    assert all(p["parse_flags"][k] for k in FLAG_NAMES)
+
+
+def test_page_score_that_disagrees_with_its_vector_is_flagged():
+    wrong = PAGE_REAL.replace("<td>8.8</td>", "<td>9.9</td>")
+    p = parse_advisory(wrong, REAL_URL)
+    assert p["cvss_score"] == 9.9 and p["parse_flags"]["cvss_score_matches_vector"] is False
+
+
+def test_vector_gives_score_when_page_has_no_score():
+    no_score = PAGE_REAL.replace("<tr><th>Overall Score</th><td>8.8</td></tr>", "")
+    p = parse_advisory(no_score, REAL_URL)
+    assert (p["cvss_score"], p["cvss_score_source"]) == (8.8, "computed")
+
+
+def test_legacy_label_layout_still_parsed():
+    p = parse_advisory(PAGE_LEGACY, "https://www.postgresql.org/support/security/CVE-2024-0985/")
     assert p["title"].startswith("CVE-2024-0985: Late privilege drop")
     assert p["affected_text"] == "16, 15, 14, 13, 12"
     assert p["fixed_versions"] == ["16.2", "15.6", "14.11", "13.14", "12.18"]
-    assert p["component"] == "core server"
+    assert p["component"] == "core server" and p["version_rows"] == []
     assert p["description"].startswith("Late privilege drop in REFRESH")
-    assert "Base Score" not in p["description"] and "Home About" not in p["full_text"]
-    assert (p["cvss_score"], p["cvss_score_source"]) == (8.0, "page")
-    assert p["cvss_vector"] == "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
-    assert all(p["parse_flags"].values())
-
-
-def test_parse_table_page():
-    p = parse_advisory(PAGE_TABLE, "https://www.postgresql.org/support/security/CVE-2022-1552/")
-    assert p["affected_text"] == "14, 13, 12, 11, 10"
-    assert p["fixed_versions"] == ["14.3", "13.7", "12.11", "11.16", "10.21"]
-    assert p["description"].startswith("Autovacuum, REINDEX")
-    assert p["cvss_score"] == 8.8 and p["cvss_vector"] is None
-    assert p["parse_flags"]["cvss_vector"] is False and p["parse_flags"]["component"] is False
+    assert (p["cvss_score"], p["cvss_score_source"]) == (8.5, "page")
+    assert p["parse_flags"]["cvss_score_matches_vector"] is True
 
 
 def test_sparse_page_stays_empty_instead_of_guessing():
@@ -146,13 +204,6 @@ def test_sparse_page_stays_empty_instead_of_guessing():
     for field in ("description", "component", "affected_text", "fixed_text", "cvss_vector",
                   "cvss_score"):
         assert p[field] is None
-    assert p["fixed_versions"] == []
-    assert set(p["parse_flags"]) == set(FLAG_NAMES)
-    assert [k for k, v in p["parse_flags"].items() if v] == ["title"]
-
-
-def test_score_computed_from_vector_when_page_has_none():
-    html = ("<div id='pgContentWrap'><h1>CVE-2020-1: t</h1>"
-            "<p>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H</p></div>")
-    p = parse_advisory(html, "https://www.postgresql.org/support/security/CVE-2020-1/")
-    assert (p["cvss_score"], p["cvss_score_source"]) == (9.8, "computed")
+    assert p["fixed_versions"] == [] and p["version_rows"] == []
+    assert set(FLAG_NAMES) <= set(p["parse_flags"])
+    assert [k for k in FLAG_NAMES if p["parse_flags"][k]] == ["title"]
