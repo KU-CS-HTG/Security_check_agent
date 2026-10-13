@@ -13,3 +13,9 @@
 ## 메모 (Phase 0)
 - Postgres 초기화 스크립트는 빈 볼륨 첫 기동 때만 실행된다.
 - 모든 서비스 포트는 127.0.0.1 바인딩.
+
+## 메모 (Phase 1)
+- 수집은 collector 역할(INSERT/UPDATE만)로 실행하고, 마이그레이션만 owner 역할로 실행한다(`python -m opsgraph db upgrade`).
+- 수집 실패 확인: `SELECT * FROM raw.collection_run ORDER BY id DESC;` (`status`: ok / partial / failed).
+- 중복 방지는 `content_hash` 비교다. 캐시(`data/http_cache`)와 다운로드(`data/osv`)는 지워도 안전하다(다시 받을 뿐).
+- 통합 테스트는 테이블을 TRUNCATE하므로 운영 데이터가 있는 DB에서 실행하지 않는다.
