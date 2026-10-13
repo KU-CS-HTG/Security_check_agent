@@ -50,10 +50,20 @@ pytest -m integration        # DB 필요: docker compose up 후 python -m opsgra
 ```
 통합 테스트는 `TRUNCATE`를 쓰므로 **개발 DB에서만** 실행한다(실데이터가 있으면 지워진다).
 
-## 이 환경에서 검증하지 못한 가정 (PC에서 스모크 테스트 필요)
-클라우드 환경이 OSV·GCS·postgresql.org에 접속할 수 없어, 아래는 문서와 기억에 기반한 가정이다.
-1. 버킷 URL 구조: `https://storage.googleapis.com/osv-vulnerabilities/<ECO>/{all.zip,modified_id.csv,<ID>.json}`와 `ecosystems.txt`
-2. `modified_id.csv` 형식 `"<iso>,<id>"`(OSV 데이터 페이지에 기재된 형식을 따름)
-3. 생태계 이름 `Debian`, `Alpine`, `GIT` 존재 여부 → `osv ecosystems`로 확인, 없으면 보고만 하고 건너뜀
-4. PostgreSQL 보안 인덱스가 `/support/security/CVE-YYYY-NNNN/` 링크를 갖는 구조 → 링크를 못 찾으면 `errors`와 노트로 알림
-5. `GIT` 생태계의 크기: 크면 `config/osv_scope.yaml`에서 빼거나 `max_download_mb`를 조정한다.
+## 실서버 검증 기록 (2026-10-13, 개발 PC)
+| 항목 | 결과 |
+|---|---|
+| `db upgrade` | 마이그레이션 0001 적용 |
+| `osv ecosystems` | 버킷에 46개 생태계, 범위 파일의 `Debian`, `Alpine`, `GIT` 모두 존재. `ecosystems.txt` 재요청은 304로 캐시 재사용 |
+| `collect postgresql-security --limit 3` | `inserted 4`(인덱스 1 + CVE 페이지 3), `errors 0`, robots.txt 확인, 요청 간격 약 2초 |
+| `collect osv -e Debian --dry-run` | 전체 70,370건 중 범위 해당 284건, 범위 밖 70,086건, Ubuntu 레코드 0건, 라이선스 `UNKNOWN` 284건. all.zip 다운로드 약 2분 10초 |
+| `collect osv -e Debian` 2회 연속 | 두 번째 실행 `inserted 0 / updated 0` (증분 경로와 중복 방지 확인) |
+
+범위 점검: 적재된 레코드의 `affected` 패키지는 `nginx`(226), `postgresql-NN`(7.4~18), `postgresql-common` 등이 대부분이다.
+`nghttp2`, `openssl`, `tomcat`, `haproxy` 같은 다른 패키지가 목록에 나오는 것은 오탐이 아니라, 한 레코드(예: HTTP/2 취약점)가
+nginx와 함께 여러 제품을 영향 대상으로 나열하기 때문이다. 필터는 "대상 제품이 한 번이라도 나오는 레코드"를 저장하고
+레코드는 원문 그대로 보존한다. 제품별 구분은 `matched_products` 컬럼으로 한다.
+
+## 검증하지 못한 가정 (남은 항목)
+1. `GIT`, `Alpine` 생태계의 크기와 필터 결과(dry-run 필요)
+2. Debian 변환 데이터의 라이선스(OSV 문서에 표기 없음 → `UNKNOWN`으로 저장, 공개 산출물 제외)
