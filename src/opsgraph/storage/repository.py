@@ -31,6 +31,7 @@ class CollectStats:
     skipped_other: int = 0
     errors: int = 0
     unknown_license: int = 0
+    would_store: int = 0  # dry-run only
     notes: list[str] = field(default_factory=list)
 
     def add(self, result: UpsertResult) -> None:
@@ -38,7 +39,7 @@ class CollectStats:
 
     def merge(self, other: CollectStats) -> None:
         for f in ("inserted", "updated", "unchanged", "skipped_scope", "skipped_license",
-                  "skipped_other", "errors", "unknown_license"):
+                  "skipped_other", "errors", "unknown_license", "would_store"):
             setattr(self, f, getattr(self, f) + getattr(other, f))
         self.notes.extend(other.notes)
 

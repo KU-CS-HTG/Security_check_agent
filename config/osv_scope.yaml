@@ -1,0 +1,28 @@
+# Scope (b): only OSV records that concern the target products, found in the listed ecosystems.
+# `ecosystems` are OSV export directory names (gs://osv-vulnerabilities/<name>/); check them with
+#   python -m opsgraph osv ecosystems
+# An entry that does not exist in ecosystems.txt is reported and skipped, never guessed.
+# Ubuntu is excluded by policy (CC-BY-SA, ADR-0003) and filtered again in code.
+ecosystems:
+  - Debian        # distro packages: affected/fixed package versions per release
+  - Alpine
+  - GIT           # upstream records keyed by repository URL (e.g. converted NVD CVEs)
+  # - "Linux"     # kernel records are numerous; enable deliberately
+  # - "Rocky Linux"
+  # - AlmaLinux
+
+products:
+  - name: postgresql
+    package_patterns:
+      Debian: ["^postgresql", "^libpq"]
+      Alpine: ["^postgresql", "^libpq"]
+    repo_patterns:
+      - "postgresql\\.org"
+      - "github\\.com/postgres/postgres"
+  - name: nginx
+    package_patterns:
+      Debian: ["^nginx"]
+      Alpine: ["^nginx"]
+    repo_patterns:
+      - "nginx\\.org"
+      - "github\\.com/nginx/nginx"
