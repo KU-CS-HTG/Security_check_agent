@@ -6,3 +6,8 @@ http:                         # used only by the collection stage (needs externa
   respect_robots_txt: true
   cache_dir: data/http_cache
   cache_ttl_seconds: 86400
+  # Hosts that are an official bulk-data channel documented for programmatic use
+  # (OSV data page: "gs://osv-vulnerabilities", https://storage.googleapis.com/osv-vulnerabilities/...).
+  # Everything else is checked against robots.txt.
+  robots_exempt_hosts: [storage.googleapis.com]
+  max_download_mb: 2048

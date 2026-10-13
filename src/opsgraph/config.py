@@ -9,6 +9,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -45,6 +46,16 @@ class Settings(BaseSettings):
         return (
             f"postgresql://{user}:{password}@{self.postgres_host}:{self.postgres_port}"
             f"/{self.postgres_db}"
+        )
+
+    def sqlalchemy_url(self, role: DbRole) -> URL:
+        return URL.create(
+            "postgresql+psycopg",
+            username=getattr(self, f"db_{role}_user"),
+            password=getattr(self, f"db_{role}_password"),
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
         )
 
     def __repr__(self) -> str:  # never leak secrets into logs
@@ -121,6 +132,8 @@ class HttpSettings(BaseModel):
     respect_robots_txt: bool = True
     cache_dir: str = "data/http_cache"
     cache_ttl_seconds: int = 86400
+    robots_exempt_hosts: list[str] = Field(default_factory=list)
+    max_download_mb: int = 2048
 
 
 class AppConfig(BaseModel):
