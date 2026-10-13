@@ -13,6 +13,19 @@ from opsgraph.config import Settings
 
 pytestmark = pytest.mark.integration
 
+# A hung connection must fail fast instead of freezing the test run.
+CONNECT_TIMEOUT = 5
+STATEMENT_TIMEOUT_MS = 10_000
+
+
+def connect(settings: Settings, role: str, **kw):
+    return psycopg.connect(
+        settings.dsn(role),
+        connect_timeout=CONNECT_TIMEOUT,
+        options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+        **kw,
+    )
+
 
 @pytest.fixture(scope="module")
 def settings():
@@ -20,7 +33,7 @@ def settings():
     if not (s.db_owner_password and s.db_collector_password and s.db_reader_password):
         pytest.skip("DB role passwords not configured")
     try:
-        psycopg.connect(s.dsn("owner"), connect_timeout=3).close()
+        connect(s, "owner").close()
     except psycopg.OperationalError as e:
         pytest.skip(f"database not reachable: {e}")
     return s
@@ -29,7 +42,7 @@ def settings():
 @pytest.fixture(scope="module")
 def table(settings):
     name = f"t_{uuid.uuid4().hex[:8]}"
-    with psycopg.connect(settings.dsn("owner"), autocommit=True) as c:
+    with connect(settings, "owner", autocommit=True) as c:
         c.execute(f"CREATE TABLE raw.{name} (id serial PRIMARY KEY, v text)")
         c.execute(f"CREATE TABLE core.{name} (id int)")
         yield name
@@ -38,7 +51,7 @@ def table(settings):
 
 
 def run(settings, role, sql):
-    with psycopg.connect(settings.dsn(role), autocommit=True) as c:
+    with connect(settings, role, autocommit=True) as c:
         cur = c.execute(sql)
         return cur.fetchall() if cur.description else None
 
