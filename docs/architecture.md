@@ -42,6 +42,6 @@ flowchart LR
 | 온톨로지 | Phase 3에서 `ontology/` | 노드·관계 정의 |
 | 모델 | `config/models.yaml` | provider·모델명 |
 
-## 자원 계획 (RAM 8GB 가정)
-PostgreSQL 1GB + Neo4j 1.5GB + Airflow 웹서버·스케줄러 각 1GB 상한 = 약 4.5GB. 로컬 LLM은 GPU VRAM에 올리지만
-모델 로딩 시 시스템 RAM도 쓰므로 동시 구동 시 여유가 작다. 문제가 생기면 Airflow를 profile로 분리해 필요할 때만 켠다.
+## 자원 계획 (PC: RAM 32GB, GPU RTX 4070 Laptop VRAM 8GB)
+- 시스템 RAM은 넉넉하다. PostgreSQL 1GB + Neo4j 1.5GB + Airflow 2GB 상한을 합쳐도 약 4.5GB이고, WSL 기본 할당(RAM의 50%, 약 16GB)으로 충분하므로 `.wslconfig` 조정은 필수가 아니다.
+- 병목은 **GPU VRAM 8GB**다. 로컬 LLM·임베딩 모델 선택에 직접 영향한다(양자화된 7~8B급까지가 현실적, 13B 이상은 CPU 오프로딩 필요). 모델 결정은 Phase 2·4의 ADR에서 한다.

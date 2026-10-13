@@ -51,11 +51,43 @@ class Settings(BaseSettings):
         return "Settings(<redacted>)"
 
 
+class LicensePolicy(BaseModel):
+    """Which licenses may enter the pipeline (decisions of 2026-10-09, see docs/sources/SOURCES.md).
+
+    The project is NOT restricted to non-commercial use, so KOGL types with a
+    commercial-use ban (2, 4) are excluded. Types 3/4 forbid derivative works: collected text may
+    be stored and quoted, but LLM rewrites of it must not be published.
+    """
+
+    kogl_collectable_types: list[int] = Field(default_factory=lambda: [0, 1, 3])
+    kogl_no_published_rewrite_types: list[int] = Field(default_factory=lambda: [3, 4])
+    blocked_spdx: list[str] = Field(default_factory=lambda: ["CC-BY-SA-4.0"])
+
+    def kogl_collectable(self, kogl_type: int) -> bool:
+        return kogl_type in self.kogl_collectable_types
+
+    def kogl_rewrite_publishable(self, kogl_type: int) -> bool:
+        return kogl_type not in self.kogl_no_published_rewrite_types
+
+    def spdx_allowed(self, spdx_id: str) -> bool:
+        return spdx_id not in self.blocked_spdx
+
+
 class ApprovedSource(BaseModel):
     id: str
     status: Literal["approved", "conditional"]
     conditions: list[str] = Field(default_factory=list)
     min_interval_seconds: float = 2.0
+    allow_url_prefixes: list[str] = Field(default_factory=list)   # empty = no URL restriction
+    deny_url_prefixes: list[str] = Field(default_factory=list)    # deny wins over allow
+    exclude_ecosystems: list[str] = Field(default_factory=list)   # e.g. OSV ecosystems
+
+    def url_allowed(self, url: str) -> bool:
+        if any(url.startswith(p) for p in self.deny_url_prefixes):
+            return False
+        if not self.allow_url_prefixes:
+            return True
+        return any(url.startswith(p) for p in self.allow_url_prefixes)
 
     @model_validator(mode="after")
     def _conditional_needs_conditions(self) -> ApprovedSource:
@@ -65,6 +97,7 @@ class ApprovedSource(BaseModel):
 
 
 class SourcesConfig(BaseModel):
+    license_policy: LicensePolicy = Field(default_factory=LicensePolicy)
     sources: list[ApprovedSource] = Field(default_factory=list)
 
     @model_validator(mode="after")

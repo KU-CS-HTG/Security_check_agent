@@ -1,8 +1,34 @@
 # Approved data sources ONLY. Add an entry after the source is approved in docs/sources/SOURCES.md
 # (status: approved | conditional). Collectors refuse sources that are not listed here.
-sources: []
-# Example (do not enable before approval):
-# - id: ubuntu-security
-#   status: conditional
-#   conditions: ["respect Crawl-delay >= 1s", "license confirmed in SOURCES.md"]
-#   min_interval_seconds: 2
+
+# Decisions of 2026-10-09:
+#  - project is not limited to non-commercial use -> KOGL types 2 and 4 (commercial ban) are excluded
+#  - KOGL types 3/4 forbid derivative works -> store/quote only, never publish LLM rewrites
+#  - CC-BY-SA data (Ubuntu) excluded at first (ADR-0003); promote later via "B plan"
+license_policy:
+  kogl_collectable_types: [0, 1, 3]
+  kogl_no_published_rewrite_types: [3, 4]
+  blocked_spdx: [CC-BY-SA-4.0]
+
+sources:
+  - id: osv
+    status: conditional
+    conditions:
+      - "store source_url and the per-record license with every record (licenses differ per upstream DB)"
+      - "attribution preserved for CC-BY records"
+      - "skip Ubuntu ecosystem records (CC-BY-SA 4.0, ADR-0003)"
+      - "prefer official dumps (gs://osv-vulnerabilities, modified_id.csv) over per-record API loops"
+    min_interval_seconds: 2
+    exclude_ecosystems: [Ubuntu]
+  - id: postgresql
+    status: conditional
+    conditions:
+      - "keep the PostgreSQL License copyright notice with copies of documentation"
+      - "keep source_url on every stored page; site security-notice pages have no separate license text -> link back"
+      - "obey robots.txt: /docs/devel/ is disallowed"
+    min_interval_seconds: 2
+    allow_url_prefixes:
+      - https://www.postgresql.org/support/security/
+      - https://www.postgresql.org/docs/
+    deny_url_prefixes:
+      - https://www.postgresql.org/docs/devel/

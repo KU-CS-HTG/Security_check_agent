@@ -31,17 +31,31 @@
 | ID | 접근 확인 | robots.txt 해석 | 약관·라이선스 | 한도 | 판정 |
 |---|---|---|---|---|---|
 | nvd | API 샘플 200 JSON. 약관·API 안내 페이지는 JS 렌더링 셸(2,092 B)만 와서 **본문 미확보** | `nvd.nist.gov/robots.txt`가 HTML(SPA)을 반환 → 유효한 robots 없음. `services.nvd.nist.gov` 404 → 규칙 없음 | 미확인(브라우저로 직접 확인 필요) | 미확인 | 대기 |
-| osv | 문서 2종 200, API 샘플 200 JSON | `api.osv.dev`, `google.github.io` 모두 404 → 규칙 없음 | **확인함**: 데이터 소스별 라이선스 표기(CC-BY 4.0, CC0, MIT, Apache 2.0, **Ubuntu는 CC-BY-SA 4.0**). 상세 메모 참조 | API 한도·약관 페이지 미독 | 조건부 후보 |
+| osv | 문서 2종 200, API 샘플 200 JSON | `api.osv.dev`, `google.github.io` 모두 404 → 규칙 없음 | **확인함**: 데이터 소스별 라이선스 표기(CC-BY 4.0, CC0, MIT, Apache 2.0, **Ubuntu는 CC-BY-SA 4.0**). 상세 메모 참조 | API 한도·약관 페이지 미독 | **승인(조건부)** |
 | kisa-boho | boho.or.kr 200. **www.kisa.or.kr은 SSL 인증서 검증 실패**(PC 환경) | boho·krcert: `googlebot`·`Yeti` 그룹만 있고 `*` 그룹 없음 → 우리 UA에 적용되는 규칙 없음(검색엔진 전용 의도로 보여 약관 확인 필수). kisa.or.kr은 미확보 | 미확인 | - | 대기 |
 | data-go-kr | 포털·공공누리 페이지 200 | 두 도메인 모두 `Googlebot` 그룹만 존재 → 우리 UA 규칙 없음 | **공공누리 유형 1~4 정의 확인함**(상세 메모). 개별 자료의 유형은 자료마다 다름 | 미확인 | 자료별 판정 |
 | law-go-kr | law.go.kr 200, open.law.go.kr API 안내 200 | law.go.kr: `Allow: /`. open.law.go.kr: robots 경로가 "Page Not Found" HTML → 규칙 없음 | 미확인 | 미확인 | 대기 |
 | gov-guidelines | msit·mois·nis·ncsc 메인 200 | msit·mois: 허용(msit는 검색 경로만 금지). **nis.go.kr: `User-agent: *` → `Disallow: /`(검색엔진 일부만 허용) → 수집 불가**. ncsc: robots 대신 오류 HTML → 규칙 없음 | 미확인(문서 단위) | - | **nis 제외**, 나머지 대기 |
-| postgresql | 라이선스·보안 페이지 200 | `/docs/devel/` 등 일부 금지, 보안 페이지·`/docs/16/` 허용. Crawl-delay 없음 | **확인함**: PostgreSQL License(소프트웨어·문서 사용·복사·수정·배포 허용, 저작권 고지 유지). 웹사이트 공지 페이지 별도 라이선스는 미확인 | - | 조건부(승인 유력) |
+| postgresql | 라이선스·보안 페이지 200 | `/docs/devel/` 등 일부 금지, 보안 페이지·`/docs/16/` 허용. Crawl-delay 없음 | **확인함**: PostgreSQL License(소프트웨어·문서 사용·복사·수정·배포 허용, 저작권 고지 유지). 웹사이트 공지 페이지 별도 라이선스는 미확인 | - | **승인(조건부)** |
 | nginx | LICENSE·보안 권고 200 | `Disallow: /libxslt/`만 → 보안 권고 허용 | 미확인 | - | 대기(유력) |
-| ubuntu-security | JSON API 200, IP 정책 페이지 200 | `/security` 허용, Crawl-delay 1 | IP 정책은 **배포판·상표 정책**이며 CVE JSON 데이터 라이선스에 대한 조항은 아님. 데이터 라이선스 **미확인** | 문서 미확인 | 보류 |
+| ubuntu-security | JSON API 200, IP 정책 페이지 200 | `/security` 허용, Crawl-delay 1 | IP 정책은 **배포판·상표 정책**이며 CVE JSON 데이터 라이선스에 대한 조항은 아님. 데이터 라이선스 **미확인** | 문서 미확인 | **제외(A안, 2026-10-09 결정)** → 데이터 라이선스 확인 후 B안 검토 |
 | debian-security | 라이선스 페이지·JSON 덤프 200 | 두 도메인 robots 404 → 규칙 없음 | 미독 | - | 대기(선택) |
 | redhat-security | 약관·API 200 | `User-agent: *`에서 API 경로 허용, **Crawl-delay 10** | 미독 | 문서 미확인 | 대기(선택) |
 | cis | 약관 페이지 200 | `Disallow:` 비어 있음(전체 허용), Crawl-delay 10 | 미독(가입·재배포 제한 추정) | - | 제외 가능성 높음 |
+
+## 결정 기록
+| 날짜 | 결정 | 근거 |
+|---|---|---|
+| 2026-10-09 | nis.go.kr 수집 제외 | robots.txt가 일반 크롤러 전체 금지 |
+| 2026-10-09 | **Ubuntu(CC-BY-SA) 데이터는 A안으로 시작**: 초기 수집에서 제외하고, 공식 라이선스 확인 후 B안(수집·격리, 공개 산출물에서 분리)으로 승격 | [ADR-0003](../adr/0003-exclude-share-alike-data-initially.md) |
+
+| 2026-10-09 | **비상업으로 한정하지 않는다** → 공공누리 제2·4유형(상업적 이용금지) 자료는 수집하지 않음 | 공공누리 정의 인용(상세 메모) |
+| 2026-10-09 | 공공누리 제3·4유형은 원문 인용·링크 위주, LLM 재서술 결과는 공개하지 않음 | "변형 등 2차적 저작물 작성 금지" |
+| 2026-10-09 | OSV 조건부 승인(레코드별 source_url·license 보존, 출처표시, Ubuntu 생태계 제외, 덤프 우선) | `config/sources.yaml` |
+| 2026-10-09 | PostgreSQL 조건부 승인(저작권 고지 유지, source_url 보존, `/docs/devel/` 제외) | `config/sources.yaml` |
+
+미결정: NVD, KISA·KrCERT, 국가법령정보센터(약관 본문 필요), 공공누리 개별 자료(자료별 유형 확인 후 수집).
+정책은 `config/sources.yaml`의 `license_policy`와 `tests/test_config.py`로 강제·검증한다.
 
 ## 상세 메모: 약관·라이선스 원문 인용 (2026-10-09 증거)
 

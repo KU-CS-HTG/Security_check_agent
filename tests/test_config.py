@@ -15,7 +15,7 @@ from opsgraph.logging import configure_logging, get_logger
 
 
 def test_repo_configs_load():
-    assert load_sources().sources == []  # nothing approved yet
+    assert load_sources().sources  # approved list is non-empty
     assert load_app_config().http.max_retries >= 1
     m = load_models()
     assert m.embedding.provider == "local" and m.llm.provider == "local"
@@ -61,3 +61,24 @@ def test_logging_emits_json(capsys):
     get_logger("t").info("hello", source="nvd")
     rec = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
     assert rec["event"] == "hello" and rec["source"] == "nvd" and rec["level"] == "info"
+
+
+def test_repo_sources_yaml_decisions():
+    cfg = load_sources()
+    assert {s.id for s in cfg.sources} == {"osv", "postgresql"}
+    assert all(s.status == "conditional" and s.conditions for s in cfg.sources)
+    lp = cfg.license_policy
+    assert lp.kogl_collectable(1) and lp.kogl_collectable(3)
+    assert not lp.kogl_collectable(2) and not lp.kogl_collectable(4)  # commercial-use ban
+    assert not lp.kogl_rewrite_publishable(3) and not lp.kogl_rewrite_publishable(4)
+    assert lp.kogl_rewrite_publishable(1)
+    assert not lp.spdx_allowed("CC-BY-SA-4.0") and lp.spdx_allowed("CC-BY-4.0")
+    assert "Ubuntu" in cfg.get("osv").exclude_ecosystems
+
+
+def test_postgresql_url_rules_follow_robots():
+    pg = load_sources().get("postgresql")
+    assert pg.url_allowed("https://www.postgresql.org/support/security/")
+    assert pg.url_allowed("https://www.postgresql.org/docs/16/index.html")
+    assert not pg.url_allowed("https://www.postgresql.org/docs/devel/index.html")
+    assert not pg.url_allowed("https://www.postgresql.org/list/")

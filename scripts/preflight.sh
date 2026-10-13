@@ -8,16 +8,22 @@ warn() { printf '  [WARN] %s\n' "$*"; }
 bad()  { printf '  [FAIL] %s\n' "$*"; fail=1; }
 
 echo "== Environment"
+IS_GITBASH=0
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) IS_GITBASH=1 ;; esac
 case "$PWD" in
   /mnt/*) bad "repo is on a Windows drive ($PWD): slow I/O, broken permissions. Move it under ~/" ;;
-  *)      ok "repo path $PWD" ;;
+  *) if [ $IS_GITBASH -eq 1 ]; then
+       warn "Git Bash on a Windows drive ($PWD): file modes (chmod 600) cannot be enforced; use WSL Ubuntu for the Linux-server setup"
+     else ok "repo path $PWD"; fi ;;
 esac
 if grep -qi microsoft /proc/version 2>/dev/null; then ok "running in WSL"; else warn "not WSL (fine for a native Linux host)"; fi
 
 echo "== Secrets"
 if [ -f .env ]; then
   mode=$(stat -c '%a' .env)
-  [ "$mode" = "600" ] && ok ".env permissions 600" || bad ".env permissions are $mode (run: chmod 600 .env)"
+  if [ "$mode" = "600" ]; then ok ".env permissions 600"
+  elif [ $IS_GITBASH -eq 1 ]; then warn ".env mode is $mode: NTFS cannot enforce 600 here (keep the file out of shared folders / OneDrive)"
+  else bad ".env permissions are $mode (run: chmod 600 .env)"; fi
   if grep -qE '=change-me' .env; then bad ".env still contains 'change-me' placeholders"; else ok "no placeholder secrets"; fi
   git check-ignore -q .env && ok ".env is git-ignored" || bad ".env is NOT git-ignored"
 else
@@ -33,8 +39,12 @@ else
 fi
 
 echo "== Ports (must be free before first start)"
-for p in 5432 7474 7687 8080; do
-  if (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null; then warn "port $p already in use (ok if it is this stack)"; else ok "port $p free"; fi
+envport() { grep -E "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2 | cut -d' ' -f1; }
+for spec in POSTGRES_PORT:5432 NEO4J_HTTP_PORT:7474 NEO4J_BOLT_PORT:7687 AIRFLOW_PORT:8080; do
+  p=$(envport "${spec%%:*}"); p=${p:-${spec##*:}}
+  if (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null; then
+    warn "port $p (${spec%%:*}) in use: fine if it is this stack (docker compose ps); otherwise change it in .env"
+  else ok "port $p (${spec%%:*}) free"; fi
 done
 
 echo "== Resources"
