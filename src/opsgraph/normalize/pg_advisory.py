@@ -7,7 +7,8 @@ Rule based, no LLM. Structure of a real page (verified on CVE-2022-1552):
     <description paragraphs>                  the "Description" has no label
     Version Information                       heading, then a table:
         Affected Version | Fixed In | Fix Published     (one row per supported major version)
-    CVSS <x.y>                                then label/value lines: Overall Score, Component, Vector
+    CVSS <x.y>                                then label/value lines: Overall Score,
+                                              Component, Vector
     Reporting Security Vulnerabilities ...    site footer text, not part of the advisory
 
 Text is copied verbatim (whitespace normalised). A field is filled only when it is really present;
