@@ -201,5 +201,5 @@ def test_cli_stats_and_show_run_against_the_database(engines):
     res = runner.invoke(app, ["extract", "stats"])
     assert res.exit_code == 0, res.output
     assert "items: 1  evidence verified: 1 (100.0%)" in res.output
-    res = runner.invoke(app, ["extract", "show", "--page", "auth-pg-hba-conf"])
+    res = runner.invoke(app, ["extract", "show", "auth-pg-hba-conf"])
     assert res.exit_code == 0, res.output
