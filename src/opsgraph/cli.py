@@ -19,7 +19,9 @@ collect_app = typer.Typer(no_args_is_help=True, help="run collectors (approved s
 osv_app = typer.Typer(no_args_is_help=True, help="OSV helpers")
 app.add_typer(db_app, name="db")
 app.add_typer(collect_app, name="collect")
+normalize_app = typer.Typer(no_args_is_help=True, help="raw -> core (rule based, no LLM)")
 app.add_typer(osv_app, name="osv")
+app.add_typer(normalize_app, name="normalize")
 
 Dry = Annotated[bool, typer.Option("--dry-run", help="read and filter, but write nothing")]
 Limit = Annotated[int | None, typer.Option("--limit", help="stop after N records (smoke test)")]
@@ -105,6 +107,59 @@ def collect_postgresql_security(limit: Limit = None, dry_run: Dry = False) -> No
     source, _ = _approved("postgresql")
     col = PostgresSecurityCollector(_http(), make_engine(get_settings()), source)
     _report(col.collect(limit=limit, dry_run=dry_run))
+
+
+Force = Annotated[bool, typer.Option("--force", help="rebuild even if the raw data is unchanged")]
+
+
+@normalize_app.command("osv")
+def normalize_osv_cmd(force: Force = False, limit: Limit = None) -> None:
+    """raw.osv_vulnerability -> core.vulnerability / affected_package / version_range / ..."""
+    from opsgraph.normalize.osv import normalize_osv
+
+    sources = load_sources()
+    stats = normalize_osv(make_engine(get_settings(), "pipeline"), sources.license_policy,
+                          force=force, limit=limit)
+    typer.echo(json.dumps(stats.as_dict(), ensure_ascii=False, indent=2))
+    if stats.errors:
+        raise typer.Exit(1)
+
+
+@normalize_app.command("pg")
+def normalize_pg_cmd(force: Force = False, limit: Limit = None) -> None:
+    """raw.web_page (PostgreSQL security pages) -> core.pg_advisory, plus a coverage report."""
+    from opsgraph.normalize.pg_advisory import normalize_pg_advisories, parse_coverage
+
+    engine = make_engine(get_settings(), "pipeline")
+    stats = normalize_pg_advisories(engine, load_sources().license_policy, force=force, limit=limit)
+    typer.echo(json.dumps(stats.as_dict(), ensure_ascii=False, indent=2))
+    typer.echo("\nparser coverage (pages where the field was found):")
+    for name, (found, total) in parse_coverage(engine).items():
+        pct = f"{100 * found / total:.0f}%" if total else "-"
+        typer.echo(f"  {name:<15} {found:>4}/{total:<4} {pct}")
+    if stats.errors:
+        raise typer.Exit(1)
+
+
+@app.command("inspect-page")
+def inspect_page(cve: Annotated[str, typer.Argument(help="e.g. CVE-2021-23214")]) -> None:
+    """Show what the parser sees on one stored PostgreSQL security page (for tuning the parser)."""
+    from sqlalchemy import text
+
+    from opsgraph.normalize.pg_advisory import parse_advisory
+
+    engine = make_engine(get_settings(), "pipeline")
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT url, body FROM raw.web_page WHERE url LIKE :u"),
+                           {"u": f"%/{cve}/%"}).first()
+    if row is None:
+        typer.secho(f"no stored page for {cve}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    parsed = parse_advisory(row.body, row.url)
+    text_view = parsed.pop("full_text")
+    typer.echo(json.dumps(parsed, ensure_ascii=False, indent=2, default=str))
+    typer.echo("\n--- page text as the parser sees it (first 60 lines) ---")
+    typer.echo("\n".join(text_view.splitlines()[:60]))
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -3,7 +3,7 @@
 원칙: `raw`는 원본 그대로(수정 금지), `core`는 raw에서 **재생성 가능한 파생 데이터**. 모든 행에 `source_url`, `license`,
 원본 참조(raw의 키)를 둔다. 라이선스가 `UNKNOWN`이거나 KOGL 제3·4유형이면 `publishable=false`.
 
-## 2.1 정규화 (규칙 기반)
+## 2.1 정규화 (규칙 기반) — 구현 완료 (마이그레이션 0002)
 | 테이블 | 주요 컬럼 |
 |---|---|
 | `core.vulnerability` | `osv_id` PK, `aliases text[]`(CVE 등), `summary`, `details`, `severity_vector`, `severity_score`, `severity_label`, `published`, `modified`, `withdrawn`, `license`, `source_url`, `publishable` |
