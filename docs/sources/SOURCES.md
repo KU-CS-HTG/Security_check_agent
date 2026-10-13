@@ -54,6 +54,8 @@
 | 2026-10-09 | OSV 조건부 승인(레코드별 source_url·license 보존, 출처표시, Ubuntu 생태계 제외, 덤프 우선) | `config/sources.yaml` |
 | 2026-10-09 | PostgreSQL 조건부 승인(저작권 고지 유지, source_url 보존, `/docs/devel/` 제외) | `config/sources.yaml` |
 
+| 2026-10-13 | KISA "주요정보통신기반시설 기술적 취약점 분석·평가 방법 상세가이드"(2025-12-24)는 **공공누리 제4유형**(출처표시+상업적 이용금지+변경금지)으로 확인 → 현행 정책(비상업 한정 안 함)으로는 **수집 보류**, 정책 결정 대기 | 사용자 확인: PDF 873쪽, 로그인 불필요, 텍스트 선택 가능, 장: Unix 서버·DBMS·웹서버, **DBMS 장에 PostgreSQL 없음** |
+
 미결정: NVD, KISA·KrCERT, 국가법령정보센터(약관 본문 필요), 공공누리 개별 자료(자료별 유형 확인 후 수집).
 정책은 `config/sources.yaml`의 `license_policy`와 `tests/test_config.py`로 강제·검증한다.
 
