@@ -15,7 +15,7 @@
 - 한 취약점이 여러 export 생태계에 나올 수 있으므로 `osv_id` 기준으로 합치고 출처 행은 raw 참조로 남긴다.
 - `severity_label`은 CVSS 점수의 표준 구간(Low/Medium/High/Critical)에서 규칙으로 산출한다.
 
-## 2.2 문서와 조항
+## 2.2 문서와 조항 — 구현 완료 (마이그레이션 0004)
 | 테이블 | 주요 컬럼 |
 |---|---|
 | `core.document` | `id`, `source_id`, `title`, `url`, `version`, `license`, `kogl_type`, `format`, `content_hash`, `fetched_at`, `publishable` |

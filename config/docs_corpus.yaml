@@ -1,0 +1,36 @@
+# Corpus A: PostgreSQL official documentation pages used for CheckItem/Remediation extraction.
+# License: PostgreSQL License (docs/sources/SOURCES.md). Pin the version for reproducibility.
+# Page names are the html file names under https://www.postgresql.org/docs/<version>/ .
+# A name that does not exist is reported by the collector (HTTP 404) and skipped.
+version: "18"
+pages:
+  # client authentication
+  - client-authentication
+  - auth-pg-hba-conf
+  - auth-methods
+  - auth-password
+  - auth-trust
+  # roles and privileges
+  - user-manag
+  - database-roles
+  - role-attributes
+  - role-membership
+  - default-roles
+  - ddl-priv
+  - ddl-rowsecurity
+  - ddl-schemas
+  # encryption and connections
+  - ssl-tcp
+  - encryption-options
+  - runtime-config-connection
+  # logging
+  - runtime-config-logging
+  # installation and operation
+  - postgres-user
+  - creating-cluster
+  - server-start
+  # backup
+  - backup
+  - backup-dump
+  - backup-file
+  - continuous-archiving

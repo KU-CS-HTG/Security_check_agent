@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -164,6 +164,21 @@ class ModelsConfig(BaseModel):
         return self
 
 
+class DocsCorpus(BaseModel):
+    version: str
+    pages: list[str]
+
+    @field_validator("pages")
+    @classmethod
+    def _unique_pages(cls, v: list[str]) -> list[str]:
+        if len(v) != len(set(v)) or not v:
+            raise ValueError("docs_corpus.yaml: pages must be non-empty and unique")
+        return v
+
+    def urls(self) -> list[str]:
+        return [f"https://www.postgresql.org/docs/{self.version}/{p}.html" for p in self.pages]
+
+
 def _load_yaml(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -175,6 +190,10 @@ def load_sources(path: Path | None = None) -> SourcesConfig:
 
 def load_app_config(path: Path | None = None) -> AppConfig:
     return AppConfig.model_validate(_load_yaml(path or CONFIG_DIR / "settings.yaml"))
+
+
+def load_docs_corpus(path: Path | None = None) -> DocsCorpus:
+    return DocsCorpus.model_validate(_load_yaml(path or CONFIG_DIR / "docs_corpus.yaml"))
 
 
 def load_models(path: Path | None = None) -> ModelsConfig:

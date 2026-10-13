@@ -91,3 +91,17 @@ def test_library_loggers_quiet_unless_debug():
     configure_logging("INFO")
     assert logging.getLogger("httpx").level == logging.WARNING
     configure_logging("INFO")  # restore default handlers for the other tests
+
+
+def test_docs_corpus_config():
+    from opsgraph.config import DocsCorpus, load_docs_corpus
+
+    corpus = load_docs_corpus()
+    assert corpus.version == "18" and len(corpus.pages) >= 20
+    assert corpus.urls()[0] == "https://www.postgresql.org/docs/18/client-authentication.html"
+    # every url is allowed by the approved source rules; devel docs never are
+    pg = load_sources().get("postgresql")
+    assert all(pg.url_allowed(u) for u in corpus.urls())
+    assert not pg.url_allowed(DocsCorpus(version="devel", pages=["x"]).urls()[0])
+    with pytest.raises(ValidationError):
+        DocsCorpus(version="18", pages=["a", "a"])

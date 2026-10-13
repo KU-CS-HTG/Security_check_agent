@@ -7,7 +7,13 @@ from typing import Annotated
 
 import typer
 
-from opsgraph.config import PROJECT_ROOT, get_settings, load_app_config, load_sources
+from opsgraph.config import (
+    PROJECT_ROOT,
+    get_settings,
+    load_app_config,
+    load_docs_corpus,
+    load_sources,
+)
 from opsgraph.http import HttpClient
 from opsgraph.logging import configure_logging
 from opsgraph.scope import load_scope
@@ -22,6 +28,8 @@ app.add_typer(collect_app, name="collect")
 normalize_app = typer.Typer(no_args_is_help=True, help="raw -> core (rule based, no LLM)")
 app.add_typer(osv_app, name="osv")
 app.add_typer(normalize_app, name="normalize")
+docs_app = typer.Typer(no_args_is_help=True, help="documentation corpus: clauses")
+app.add_typer(docs_app, name="docs")
 
 Dry = Annotated[bool, typer.Option("--dry-run", help="read and filter, but write nothing")]
 Limit = Annotated[int | None, typer.Option("--limit", help="stop after N records (smoke test)")]
@@ -109,6 +117,16 @@ def collect_postgresql_security(limit: Limit = None, dry_run: Dry = False) -> No
     _report(col.collect(limit=limit, dry_run=dry_run))
 
 
+@collect_app.command("postgresql-docs")
+def collect_postgresql_docs(limit: Limit = None, dry_run: Dry = False) -> None:
+    """PostgreSQL documentation pages listed in config/docs_corpus.yaml (corpus A)."""
+    from opsgraph.collectors.postgresql_docs import PostgresDocsCollector
+
+    source, _ = _approved("postgresql")
+    col = PostgresDocsCollector(_http(), make_engine(get_settings()), source, load_docs_corpus())
+    _report(col.collect(limit=limit, dry_run=dry_run))
+
+
 Force = Annotated[bool, typer.Option("--force", help="rebuild even if the raw data is unchanged")]
 
 
@@ -160,6 +178,46 @@ def inspect_page(cve: Annotated[str, typer.Argument(help="e.g. CVE-2021-23214")]
     typer.echo(json.dumps(parsed, ensure_ascii=False, indent=2, default=str))
     typer.echo("\n--- page text as the parser sees it (first 60 lines) ---")
     typer.echo("\n".join(text_view.splitlines()[:60]))
+
+
+@docs_app.command("parse")
+def docs_parse(force: Force = False, limit: Limit = None) -> None:
+    """raw documentation pages -> core.document / core.clause, plus a per-page report."""
+    from opsgraph.normalize.docs import doc_report, normalize_docs
+
+    engine = make_engine(get_settings(), "pipeline")
+    stats = normalize_docs(engine, load_sources().license_policy, force=force, limit=limit)
+    typer.echo(json.dumps(stats.as_dict(), ensure_ascii=False, indent=2))
+    typer.echo("\nper page (clauses / chars / longest clause):")
+    for r in doc_report(engine):
+        flag = "  <-- no clauses" if r["clauses"] == 0 else ""
+        typer.echo(f"  {r['url'].split('/docs/', 1)[-1]:<45} {r['clauses']:>4} {r['chars']:>7} "
+                   f"{r['longest']:>6}{flag}")
+    if stats.errors:
+        raise typer.Exit(1)
+
+
+@docs_app.command("show")
+def docs_show(page: Annotated[str, typer.Argument(help="page name, e.g. auth-pg-hba-conf")],
+              full: Annotated[bool, typer.Option("--full", help="print whole clause text")] = False,
+              ) -> None:
+    """List the clauses of one stored page (heading path, size, text start)."""
+    from sqlalchemy import text
+
+    engine = make_engine(get_settings(), "pipeline")
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT c.ordinal, c.key, c.heading_path, c.text, c.source_url
+            FROM core.clause c JOIN core.document d ON d.id = c.document_id
+            WHERE d.url LIKE :u ORDER BY c.ordinal"""), {"u": f"%/{page}.html"}).all()
+    if not rows:
+        typer.secho(f"no clauses for {page}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    for r in rows:
+        path = " > ".join(r.heading_path)
+        typer.echo(f"[{r.ordinal}] {path}  ({len(r.text)} chars)  {r.source_url}")
+        body = r.text if full else r.text[:200].replace("\n", " / ")
+        typer.echo(f"    {body}")
 
 
 if __name__ == "__main__":  # pragma: no cover

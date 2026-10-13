@@ -3,8 +3,8 @@
 | 단계 | 상태 |
 |---|---|
 | 2.0 결정·역할·설계 | 완료 (ADR-0004~0006, `docs/design/phase2-core-schema.md`) |
-| **2.1 OSV·PostgreSQL 공지 정규화(규칙 기반)** | **구현 완료, 실데이터 검증 대기** |
-| 2.2 문서 수집·파싱·조항 분할 | 예정 |
+| 2.1 OSV·PostgreSQL 공지 정규화(규칙 기반) | PostgreSQL 공지 70건 실데이터로 검증 완료(필드 100%, 점수 불일치 0) |
+| **2.2 문서 수집·파싱·조항 분할** | **구현 완료, 실제 페이지 검증 대기** |
 | 2.3 LLM 클라이언트(Ollama, Qwen2.5-7B)와 검증·재시도 | 예정 |
 | 2.4 추출 실행 | 예정 |
 | 2.5 검수 도구와 품질 측정 | 예정 |
@@ -66,6 +66,28 @@ SELECT cve_id, fixed_versions, cvss_score, parse_flags FROM core.pg_advisory ORD
 
 - 파서 규칙을 바꾸면 `PARSER_VERSION`이 오르고, **raw가 그대로여도 저장된 행이 자동으로 다시 만들어진다**(OSV 정규화도 `NORMALIZER_VERSION`으로 같은 방식).
 - 테스트 샘플 `PAGE_REAL`은 실제 페이지의 텍스트 출력(문구·순서·값)에 맞춰 만든 것이고 **HTML 태그는 추정**이다. 다른 연도의 페이지가 다른 구조일 수 있어, `normalize pg`의 성공률과 `score_mismatch`를 계속 확인한다.
+
+## 2.2 문서 코퍼스(A): PostgreSQL 공식 문서 → 조항
+대상 페이지와 버전은 `config/docs_corpus.yaml`(버전 `18`, 약 25쪽)이다. 라이선스는 PostgreSQL License(공개 가능), 저작권 고지는 문서 행에 함께 저장한다.
+
+```bash
+git pull origin claude/zealous-bohr-081jz8
+python -m opsgraph db upgrade                          # 0004: core.document, core.clause
+python -m opsgraph collect postgresql-docs --dry-run   # 어떤 페이지가 있고 없는지 먼저 확인(DB 쓰기 없음)
+python -m opsgraph collect postgresql-docs
+python -m opsgraph docs parse                          # 조항으로 분할 + 페이지별 보고
+python -m opsgraph docs show auth-pg-hba-conf          # 조항 목록(제목 경로, 크기, 앞부분)
+```
+- 수집은 robots.txt와 소스 규칙(`docs/<버전>/` 허용, `docs/devel/` 차단)을 지키고, 2초 간격이다. **없는 페이지(404)는 `notes`에 보고되고 건너뛴다**(파일명이 틀린 경우 설정을 고친다).
+- 조항 = 소제목 + 다음 소제목 전까지의 본문. 제목 경로(`장 > 절 > 소절`), 출처 URL(`#앵커` 포함), 본문(공백 정규화, `<pre>` 코드와 설정 예시는 줄바꿈 보존)을 저장한다. 6,000자를 넘는 조항은 문단·코드블록 경계에서만 나눈다(`#p1`, `#p2`).
+- 목차(`toc`), 이전/다음 링크, 페이지 푸터, 소제목 옆 `#` 링크는 본문에서 제외한다. Note/Warning 같은 박스의 라벨은 섹션이 아니라 본문 줄로 남긴다.
+- **조항 ID는 `(문서, 키)`로 식별한다**(키 = 소제목 앵커). 파서 규칙을 바꾸거나 페이지가 갱신돼도 **텍스트가 같은 조항은 같은 ID를 유지**해서, 이후 단계에서 조항에 붙는 추출 결과가 불필요하게 사라지지 않는다. 사라진 소제목의 조항만 삭제된다.
+
+### 2.2 검증 방법과 한계
+- 테스트(94개)는 DocBook 출력 구조를 재현한 샘플로 파서를 확인했다. **실제 postgresql.org 페이지는 이 환경에서 볼 수 없으므로** `docs parse`의 페이지별 보고(조항 수, 글자 수, 가장 긴 조항)와 `docs show`로 직접 확인한다.
+  - 조항 수가 0인 페이지는 `<-- no clauses`로 표시된다(페이지 구조가 다르다는 신호).
+  - 한 조항이 6,000자를 크게 넘거나, 조항이 지나치게 많이 쪼개지면 분할 규칙을 조정한다.
+  - `docs show <페이지> --full`로 본문이 원문과 같은지 한두 건 대조한다.
 
 ## 알려진 한계
 1. **파서는 실제 페이지 1건(CVE-2022-1552)의 출력으로 맞췄다.** 이 환경에서는 postgresql.org에 접속할 수 없다. 다른 연도·형식의 페이지는 `normalize pg`의 필드별 성공률과 `score_mismatch`로 확인하고, 낮은 필드는 `inspect-page` 출력으로 조정한다.
