@@ -4,8 +4,8 @@
 |---|---|
 | 2.0 결정·역할·설계 | 완료 (ADR-0004~0006, `docs/design/phase2-core-schema.md`) |
 | 2.1 OSV·PostgreSQL 공지 정규화(규칙 기반) | PostgreSQL 공지 70건 실데이터로 검증 완료(필드 100%, 점수 불일치 0) |
-| **2.2 문서 수집·파싱·조항 분할** | **구현 완료, 실제 페이지 검증 대기** |
-| 2.3 LLM 클라이언트(Ollama, Qwen2.5-7B)와 검증·재시도 | 예정 |
+| 2.2 문서 수집·파싱·조항 분할 | 24쪽 → 216조항 실데이터로 검증 완료 |
+| **2.3 LLM 클라이언트·구조화 출력·근거 검증·재시도** | **구현 완료, 실제 모델 시험 대기** |
 | 2.4 추출 실행 | 예정 |
 | 2.5 검수 도구와 품질 측정 | 예정 |
 
@@ -124,6 +124,50 @@ SELECT encode(convert_to(substr(text, position('determines' in text) + 8, 8), 'U
 FROM core.clause WHERE key = 'GUC-LOG-ROTATION-SIZE';
 ```
 (`20`이면 정상 공백, `e2808b`는 제로폭 공백, `c2ad`는 소프트 하이픈.)
+
+## 2.3 LLM 추출 (조항 → 점검 항목 후보)
+
+```
+조항 텍스트 ──프롬프트(규칙 8개 + 예시 1개)──> 로컬 LLM(Ollama, JSON 스키마 강제, temperature 0)
+   └─ 응답 ─ JSON 파싱 ─ pydantic 검증 ─ 인용문이 조항 원문에 있는지 검증 ─┬ 통과 → 저장(pending)
+                                                                          └ 실패 → 문제를 알려 주고 재시도(최대 3회)
+```
+
+**추출 항목(`CheckItemDraft`)**: `title`, `category`(11개 고정 목록), `target`(설정·파일·객체), `check_method`, `recommended_value`,
+`remediation`, `risk_level`(high/medium/low/not_stated), `evidence_quote`(원문 그대로 1~2문장), `remediation_quote`.
+스키마는 평평하게 직접 작성했다(`$ref`·null 유니온 없음, 빈 문자열과 `not_stated`가 "없음"). 로컬 런타임의 제약 디코딩이 JSON Schema 일부만 지원하기 때문이다.
+
+**환각 방지(핵심)**
+- 모든 항목은 `evidence_quote`가 **조항 원문에 실제로 있어야** 통과한다. 비교는 공백·줄바꿈, 눈에 보이지 않는 문자(제로폭 공백, 소프트 하이픈),
+  타이포그래피 따옴표·대시 차이를 무시한다(`exact`). 단어가 붙어 있는 경우를 위해 공백을 모두 무시한 `loose` 수준도 있다.
+  20자 미만·600자 초과 인용은 근거로 인정하지 않고, `...`로 생략한 인용은 각 조각이 순서대로 있어야 한다.
+- `remediation_quote`가 있으면 그것도 검증한다. `target`이 조항이나 제목 경로에 없으면 `target_found=false`로 표시한다(차단하지 않고 검수 신호로 사용).
+- 위험도는 **문서가 말한 경우에만** 채운다(프롬프트 규칙 5). 문서가 말한 값이면 `risk_source=document`, 아니면 비워 둔다.
+- 검증 실패나 스키마 위반은 **무엇이 틀렸는지 모델에게 알려 주고 다시 요청**한다(최대 `max_attempts`, 기본 3). 끝내 검증되지 않은 항목은
+  `status=rejected`(자동 반려, 사유 기록)로 **저장은 하되 사용하지 않는다**. 그래야 환각률을 나중에 계산할 수 있다.
+
+**저장(`core.extraction_*`, 마이그레이션 0005)**: 실행 이력(`extraction_run`), 조항별 결과(`extraction_result`: 상태 ok/empty/failed, 시도 횟수,
+토큰, 소요 시간, 마지막 원본 응답), 항목(`extracted_item`: pending/approved/rejected, 검증 여부, 일치 수준, 검수 메모).
+- **이어하기**: 조항마다 바로 커밋하므로 중단(Ctrl+C)해도 잃는 것이 없고, 다시 실행하면 끝난 조항은 건너뛴다.
+  결과 키는 `(조항 텍스트 해시, 모델, 프롬프트 버전)`이라서 **조항이 바뀌거나 모델·프롬프트가 바뀌면 자동으로 다시 한다**. 실패한 조항은 다음 실행에서 다시 시도한다.
+- 망분리: LLM 주소는 루프백·사설 주소만 허용한다(`allow_external: true`가 아니면 거부).
+
+### 실행 (Git Bash)
+```bash
+git pull origin claude/zealous-bohr-081jz8
+python -m opsgraph db upgrade                 # 0005
+python -m opsgraph llm check                  # 모델 연결, 스키마 준수, 속도(tok/s) 확인
+python -m opsgraph extract run --page auth-pg-hba-conf --limit 10   # 10개 조항 시험
+python -m opsgraph extract show auth-pg-hba-conf                     # 조항별 결과와 인용문
+python -m opsgraph extract stats                                     # 품질 숫자
+```
+- `extract show --problems`: 실패했거나 근거가 검증되지 않은 것만 본다.
+- 첫 호출은 모델을 GPU에 올리느라 10~30초 걸릴 수 있다. 응답이 400이면 Ollama가 오래되어 JSON 스키마 `format`을 지원하지 않는 것이니 최신으로 업데이트한다.
+
+### 이 환경에서 검증한 것과 못 한 것
+- 검증: 재시도·피드백, 인용 검증, 이어하기, 오래된 결과 처리, 역할 권한을 **스크립트로 재생한 가짜 모델**로 테스트했다(143개). 변이 테스트로
+  "모든 항목을 검증됨 처리", "재시도 제거", "이어하기 무시"를 각각 테스트가 잡는 것을 확인했다. 가짜 Ollama HTTP 서버로 CLI(`llm check`, `extract run/show/stats`)도 끝까지 확인했다.
+- **못 한 것**: 실제 Qwen2.5-7B의 출력 품질, 속도, JSON 스키마 강제가 실제 Ollama 버전에서 받아들여지는지. 위 `llm check`와 시험 실행으로 확인한다.
 
 ## 알려진 한계
 1. **파서는 실제 페이지 1건(CVE-2022-1552)의 출력으로 맞췄다.** 이 환경에서는 postgresql.org에 접속할 수 없다. 다른 연도·형식의 페이지는 `normalize pg`의 필드별 성공률과 `score_mismatch`로 확인하고, 낮은 필드는 `inspect-page` 출력으로 조정한다.

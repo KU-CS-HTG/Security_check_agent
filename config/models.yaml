@@ -11,3 +11,6 @@ llm:
   endpoint: http://localhost:11434
   model: qwen2.5:7b-instruct   # Ollama tag; confirm with `ollama list` after `ollama pull`
   temperature: 0.0
+  max_attempts: 3          # extraction: tries per clause (validation errors are fed back)
+  timeout_seconds: 300
+  num_ctx: 8192

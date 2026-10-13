@@ -147,6 +147,9 @@ class ModelEndpoint(BaseModel):
     endpoint: str | None = None
     model: str | None = None
     temperature: float | None = None
+    max_attempts: int = Field(default=3, ge=1, le=6)      # extraction: tries per clause
+    timeout_seconds: float = Field(default=300, gt=0)    # one local generation can be slow
+    num_ctx: int = Field(default=8192, ge=2048)          # context window requested from the runtime
 
 
 class ModelsConfig(BaseModel):

@@ -12,6 +12,7 @@ from opsgraph.config import (
     get_settings,
     load_app_config,
     load_docs_corpus,
+    load_models,
     load_sources,
 )
 from opsgraph.http import HttpClient
@@ -30,6 +31,10 @@ app.add_typer(osv_app, name="osv")
 app.add_typer(normalize_app, name="normalize")
 docs_app = typer.Typer(no_args_is_help=True, help="documentation corpus: clauses")
 app.add_typer(docs_app, name="docs")
+llm_app = typer.Typer(no_args_is_help=True, help="local LLM runtime")
+app.add_typer(llm_app, name="llm")
+extract_app = typer.Typer(no_args_is_help=True, help="check-item extraction (local LLM)")
+app.add_typer(extract_app, name="extract")
 
 Dry = Annotated[bool, typer.Option("--dry-run", help="read and filter, but write nothing")]
 Limit = Annotated[int | None, typer.Option("--limit", help="stop after N records (smoke test)")]
@@ -219,6 +224,156 @@ def docs_show(page: Annotated[str, typer.Argument(help="page name, e.g. auth-pg-
         typer.echo(f"[{r.ordinal}] {path}  ({len(r.text)} chars)  {r.source_url}")
         body = r.text if full else r.text[:200].replace("\n", " / ")
         typer.echo(f"    {body}")
+
+
+def _llm_client():
+    from opsgraph.llm.ollama import LlmError, build_client
+
+    try:
+        return build_client(load_models())
+    except LlmError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from e
+
+
+@llm_app.command("check")
+def llm_check() -> None:
+    """Is the local model reachable, and does it follow the extraction schema? (sample clause)"""
+    from opsgraph.extract.prompt import EXAMPLE_CLAUSE
+    from opsgraph.extract.runner import extract_clause
+    from opsgraph.llm.ollama import LlmError
+
+    cfg = load_models().llm
+    client = _llm_client()
+    try:
+        names = client.list_models()
+    except LlmError as e:
+        typer.secho(f"{e}\nIs Ollama running? (tray icon, or: ollama serve)", fg=typer.colors.RED,
+                    err=True)
+        raise typer.Exit(1) from e
+    typer.echo(f"endpoint {client.endpoint}: {len(names)} model(s): {', '.join(names) or '-'}")
+    if not any(n == cfg.model or n.split(":")[0] == str(cfg.model).split(":")[0] for n in names):
+        typer.secho(f"model {cfg.model!r} not found. Run: ollama pull {cfg.model}",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    # the sample clause is deliberately made-up: it must NOT be answered from memory
+    out = extract_clause(client, doc_title="(sample)", heading_path=["sample"], source_url="-",
+                         text=EXAMPLE_CLAUSE, max_attempts=cfg.max_attempts)
+    rate = out.completion_tokens / (out.duration_ms / 1000) if out.duration_ms else 0
+    typer.echo(f"status={out.status} attempts={out.attempts} tokens(prompt/answer)="
+               f"{out.prompt_tokens}/{out.completion_tokens} time={out.duration_ms / 1000:.1f}s "
+               f"speed={rate:.0f} tok/s")
+    for it in out.items:
+        typer.echo(f"  item: {it.payload['title']} [{it.payload['category']}] "
+                   f"evidence={'OK ' + str(it.evidence_match) if it.verified else 'NOT FOUND'}")
+    if out.status == "failed":
+        typer.secho(f"failed: {out.error}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+
+@extract_app.command("run")
+def extract_run(
+    page: Annotated[list[str] | None, typer.Option("--page", "-p", help="page name(s)")] = None,
+    limit: Annotated[int | None, typer.Option("--limit", help="max clauses this run")] = None,
+    min_chars: Annotated[int, typer.Option("--min-chars", help="skip shorter clauses")] = 80,
+    force: Annotated[bool, typer.Option("--force", help="redo clauses that already have a result")]
+    = False,
+) -> None:
+    """Extract check items from clauses. Resumable: finished clauses are skipped."""
+    from opsgraph.extract.service import run_extraction
+
+    cfg = load_models().llm
+    client = _llm_client()
+    engine = make_engine(get_settings(), "pipeline")
+
+    def progress(i, n, clause, out):
+        verified = sum(1 for it in out.items if it.verified)
+        typer.echo(f"[{i}/{n}] {out.status:<6} attempts={out.attempts} items={len(out.items)} "
+                   f"verified={verified} {out.duration_ms / 1000:.1f}s  {clause.key}")
+
+    stats = run_extraction(engine, client, model=str(cfg.model), pages=page, limit=limit,
+                           min_chars=min_chars, force=force, max_attempts=cfg.max_attempts,
+                           on_progress=progress)
+    typer.echo(json.dumps(stats.as_dict(), indent=2))
+    if stats.failed:
+        raise typer.Exit(1)
+
+
+@extract_app.command("show")
+def extract_show(
+    page: Annotated[str, typer.Argument(help="page name, e.g. runtime-config-logging")],
+    problems: Annotated[bool, typer.Option("--problems", help="only failed/rejected")] = False,
+    limit: Annotated[int, typer.Option("--limit")] = 30,
+) -> None:
+    """Show results for the clauses of one page: items with their evidence, side by side."""
+    from sqlalchemy import text
+
+    engine = make_engine(get_settings(), "pipeline")
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT c.key, c.ordinal, r.status, r.attempts, r.error, i.payload, i.evidence_match,
+                   i.evidence_verified, i.target_found
+            FROM core.clause c JOIN core.document d ON d.id = c.document_id
+            JOIN core.extraction_result r ON r.clause_id = c.id AND r.text_hash = c.text_hash
+            LEFT JOIN core.extracted_item i ON i.result_id = r.id
+            WHERE d.url LIKE :u ORDER BY c.ordinal, i.id"""), {"u": f"%/{page}.html"}).all()
+    shown = 0
+    last = None
+    for r in rows:
+        bad = r.status == "failed" or (r.payload is not None and not r.evidence_verified)
+        if problems and not bad:
+            continue
+        if r.key != last:
+            if shown >= limit:
+                break
+            shown += 1
+            last = r.key
+            typer.echo(f"\n[{r.ordinal}] {r.key}  status={r.status} attempts={r.attempts}"
+                       + (f"  error={r.error}" if r.error else ""))
+        if r.payload is not None:
+            p = r.payload
+            mark = f"verified({r.evidence_match})" if r.evidence_verified else "NOT VERIFIED"
+            missing = "" if r.target_found else " (target not in clause!)"
+            typer.echo(f"   - {p['title']} [{p['category']}] target={p['target']}{missing} "
+                       f"risk={p['risk_level']}  {mark}")
+            typer.echo(f"       evidence: {p['evidence_quote']}")
+            if p.get("remediation"):
+                typer.echo(f"       remediation: {p['remediation']}")
+    if not rows:
+        typer.secho(f"no extraction results for {page}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+
+@extract_app.command("stats")
+def extract_stats() -> None:
+    """Quality numbers of the stored results (feeds docs/ops/PHASE2.md and the evaluation)."""
+    from sqlalchemy import text
+
+    engine = make_engine(get_settings(), "pipeline")
+    with engine.connect() as conn:
+        res = conn.execute(text("""
+            SELECT status, count(*) AS n, round(avg(attempts), 2) AS avg_attempts,
+                   round(avg(duration_ms) / 1000.0, 1) AS avg_seconds,
+                   count(*) FILTER (WHERE attempts > 1) AS retried
+            FROM core.extraction_result GROUP BY status ORDER BY status""")).all()
+        items = conn.execute(text("""
+            SELECT count(*) AS total, count(*) FILTER (WHERE evidence_verified) AS verified,
+                   count(*) FILTER (WHERE evidence_match = 'loose') AS loose,
+                   count(*) FILTER (WHERE NOT target_found) AS target_missing,
+                   count(*) FILTER (WHERE status = 'approved') AS approved,
+                   count(*) FILTER (WHERE status = 'pending') AS pending
+            FROM core.extracted_item""")).one()
+        cats = conn.execute(text("""
+            SELECT payload->>'category' AS category, count(*) AS n
+            FROM core.extracted_item WHERE evidence_verified GROUP BY 1 ORDER BY 2 DESC""")).all()
+    typer.echo("clause results (status / n / avg attempts / avg seconds / retried):")
+    for r in res:
+        typer.echo(f"  {r.status:<7} {r.n:>5}  {r.avg_attempts}  {r.avg_seconds}s  {r.retried}")
+    pct = f"{100 * items.verified / items.total:.1f}%" if items.total else "-"
+    typer.echo(f"items: {items.total}  evidence verified: {items.verified} ({pct})  "
+               f"loose matches: {items.loose}  target missing: {items.target_missing}  "
+               f"pending: {items.pending}  approved: {items.approved}")
+    typer.echo("verified items by category: " + ", ".join(f"{c.category}={c.n}" for c in cats))
 
 
 if __name__ == "__main__":  # pragma: no cover

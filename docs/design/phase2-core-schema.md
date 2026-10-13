@@ -21,7 +21,7 @@
 | `core.document` | `id`, `source_id`, `title`, `url`, `version`, `license`, `kogl_type`, `format`, `content_hash`, `fetched_at`, `publishable` |
 | `core.clause` | `id`, `document_id` FK, `ordinal`, `heading_path text[]`, `text`(원문 그대로), `text_hash`, `source_url`(앵커 포함) |
 
-## 2.3~2.4 추출
+## 2.3~2.4 추출 — 2.3 구현 완료 (마이그레이션 0005, 테이블은 `extraction_run` / `extraction_result` / `extracted_item`)
 | 테이블 | 주요 컬럼 |
 |---|---|
 | `core.extraction_run` | `id`, `model`, `prompt_version`, `schema_version`, `params jsonb`, `started_at`, `finished_at` |
