@@ -15,7 +15,8 @@ pages:
   - database-roles
   - role-attributes
   - role-membership
-  - default-roles
+  - default-roles          # may only be a pointer page in recent versions
+  - predefined-roles
   - ddl-priv
   - ddl-rowsecurity
   - ddl-schemas

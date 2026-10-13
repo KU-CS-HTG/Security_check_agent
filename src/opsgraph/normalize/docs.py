@@ -24,8 +24,12 @@ from opsgraph.storage.repository import canonical_hash
 log = get_logger(__name__)
 
 # bump when parsing/splitting rules change: stored documents are then rebuilt automatically
-PARSER_VERSION = "1"
+PARSER_VERSION = "2"
 MAX_CLAUSE_CHARS = 6000
+# a section longer than this that contains definition-list terms is split per term (one clause
+# per documented setting), so a clause maps to one checkable thing and one citable anchor
+TERM_SPLIT_CHARS = 3500
+MAX_TERM_PATH_CHARS = 120
 SOURCE_LABEL = "postgresql-docs"
 
 # From the PostgreSQL licence page: the notice must stay with copies of the documentation.
@@ -46,7 +50,7 @@ BLOCK_CHILDREN = {"p", "ul", "ol", "dl", "pre", "table", "div", "blockquote", *H
 
 @dataclass
 class Block:
-    kind: str                # h | p | pre | row
+    kind: str                # h | term | p | pre | row
     text: str
     level: int = 0           # headings only
     anchor: str | None = None
@@ -101,6 +105,14 @@ def _anchor(h: Tag) -> str | None:
     return None
 
 
+def _text(tag: Tag) -> str:
+    """Text of an element as one line. Inline markup (<code>, <a>, ...) is merged without adding
+    spaces, so `<code>trust</code>,` stays `trust,` and quotes can be matched against the source."""
+    for br in tag.find_all("br"):
+        br.replace_with("\n")
+    return _norm(tag.get_text())
+
+
 def _classes(tag: Tag) -> set[str]:
     return set(tag.get("class") or [])
 
@@ -118,7 +130,7 @@ def iter_blocks(root: Tag):
             if name in SKIP_TAGS or classes & SKIP_CLASSES or child.get("id") in SKIP_IDS:
                 continue
             if name in HEADINGS:
-                txt = _norm(child.get_text(" "))
+                txt = _text(child)
                 if not txt:
                     continue
                 if in_admonition:      # "Note", "Warning" ... are labels, not sections
@@ -131,11 +143,15 @@ def iter_blocks(root: Tag):
                     yield Block("pre", raw)
             elif name == "table":
                 for tr in child.find_all("tr"):
-                    cells = [_norm(c.get_text(" ")) for c in tr.find_all(["th", "td"])]
+                    cells = [_text(c) for c in tr.find_all(["th", "td"])]
                     if any(cells):
                         yield Block("row", " | ".join(cells))
-            elif name in ("p", "dt", "caption"):
-                txt = _norm(child.get_text(" "))
+            elif name == "dt":
+                txt = _text(child)
+                if txt:
+                    yield Block("term", txt, anchor=_anchor(child))
+            elif name in ("p", "caption"):
+                txt = _text(child)
                 if txt:
                     yield Block("p", txt)
             elif name in ("li", "dd"):
@@ -145,14 +161,14 @@ def iter_blocks(root: Tag):
                         inner[0].text = "- " + inner[0].text
                     yield from inner
                 else:
-                    txt = _norm(child.get_text(" "))
+                    txt = _text(child)
                     if txt:
                         yield Block("p", ("- " + txt) if name == "li" else txt)
             elif name in ("div", "section", "article", "blockquote", "ul", "ol", "dl", "tbody",
                           "thead", "main", "span"):
                 adm = in_admonition or bool(classes & ADMONITIONS)
                 if name in ("div", "span") and not _has_block_child(child):
-                    txt = _norm(child.get_text(" "))
+                    txt = _text(child)
                     if txt and not child.find(["table", "pre"]):
                         yield Block("p", txt)
                         continue
@@ -175,6 +191,48 @@ def _split(blocks: list[Block], max_chars: int) -> list[list[Block]]:
     if cur:
         parts.append(cur)
     return parts
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:60] or "term"
+
+
+def _term_units(blocks: list[Block]) -> tuple[list[Block], list[list[Block]]]:
+    """(blocks before the first term, [term + its following blocks, ...])"""
+    lead: list[Block] = []
+    units: list[list[Block]] = []
+    for b in blocks:
+        if b.kind == "term":
+            units.append([b])
+        elif units:
+            units[-1].append(b)
+        else:
+            lead.append(b)
+    return lead, units
+
+
+def _expand(path: list[str], anchor: str | None, blocks: list[Block], max_chars: int):
+    """Yield (key, heading_path, anchor, blocks) for one heading's content."""
+    base = anchor or "/".join(path) or "intro"
+    total = sum(len(b.text) for b in blocks)
+    lead, units = _term_units(blocks)
+    if total > TERM_SPLIT_CHARS and len(units) >= 2:
+        if lead:
+            yield from _size_parts(base, path, anchor, lead, max_chars)
+        for unit in units:
+            term = unit[0]
+            tpath = [*path, term.text[:MAX_TERM_PATH_CHARS]]
+            tkey = term.anchor or f"{base}/{_slug(term.text)}"
+            yield from _size_parts(tkey, tpath, term.anchor or anchor, unit, max_chars)
+    else:
+        yield from _size_parts(base, path, anchor, blocks, max_chars)
+
+
+def _size_parts(key: str, path: list[str], anchor: str | None, blocks: list[Block],
+                max_chars: int):
+    parts = _split(blocks, max_chars)
+    for i, part in enumerate(parts):
+        yield (key if len(parts) == 1 else f"{key}#p{i + 1}"), path, anchor, part
 
 
 def parse_doc(html: str, url: str, *, max_chars: int = MAX_CLAUSE_CHARS) -> ParsedDoc:
@@ -212,16 +270,13 @@ def parse_doc(html: str, url: str, *, max_chars: int = MAX_CLAUSE_CHARS) -> Pars
     for path, anchor, blocks in drafts:
         if not blocks:
             continue
-        base = anchor or "/".join(path) or "intro"
-        parts = _split(blocks, max_chars)
-        for i, part in enumerate(parts):
-            key = base if len(parts) == 1 else f"{base}#p{i + 1}"
+        for key, cpath, canchor, part in _expand(path, anchor, blocks, max_chars):
             used[key] = used.get(key, 0) + 1
             if used[key] > 1:
                 key = f"{key}~{used[key]}"
             clauses.append(ClauseDraft(
-                key=key, ordinal=len(clauses), heading_path=path,
-                text="\n".join(b.text for b in part), anchor=anchor))
+                key=key, ordinal=len(clauses), heading_path=cpath,
+                text="\n".join(b.text for b in part), anchor=canchor))
     return ParsedDoc(title=title, copyright_notice=notice,
                      notice_from_page=notice_match is not None, clauses=clauses)
 

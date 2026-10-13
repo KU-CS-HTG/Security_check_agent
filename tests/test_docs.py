@@ -94,3 +94,66 @@ def test_duplicate_anchors_get_distinct_keys():
             '</div><p>b</p></div></div>')
     keys = [c.key for c in parse_doc(html, URL).clauses]
     assert len(keys) == len(set(keys)) == 2
+
+
+def _guc_page(n_terms: int = 6, with_ids: bool = True) -> str:
+    items = ""
+    for i in range(n_terms):
+        ident = f' id="GUC-SETTING-{i}"' if with_ids else ""
+        items += (f'<dt{ident}><span class="term"><code class="varname">setting_{i}</code> '
+                  f'(<code class="type">boolean</code>)'
+                  f'<a href="#GUC-SETTING-{i}" class="id_link">#</a></span></dt>'
+                  f'<dd><p>{"Controls behaviour number " + str(i) + ". " * 1}'
+                  f'{"This sentence pads the description. " * 25}</p>'
+                  f'<p>The default is <code>off</code>.</p></dd>')
+    return ('<div id="docContent"><div class="sect1" id="RUNTIME-CONFIG-LOGGING-WHAT">'
+            '<div class="titlepage"><div><div>'
+            '<h2 class="title">19.8.3. What to Log</h2></div></div></div>'
+            '<p>Intro paragraph of the section.</p>'
+            f'<div class="variablelist"><dl class="variablelist">{items}</dl></div></div></div>')
+
+
+def test_oversized_section_with_terms_is_split_per_setting():
+    doc = parse_doc(_guc_page(), "https://www.postgresql.org/docs/18/runtime-config-logging.html")
+    keys = [c.key for c in doc.clauses]
+    assert keys[0] == "RUNTIME-CONFIG-LOGGING-WHAT"          # lead paragraph
+    assert keys[1:] == [f"GUC-SETTING-{i}" for i in range(6)]  # one clause per setting
+    lead, first = doc.clauses[0], doc.clauses[1]
+    assert lead.text == "Intro paragraph of the section."
+    assert first.heading_path == ["19.8.3. What to Log", "setting_0 (boolean)"]  # '#' removed
+    assert first.text.startswith("setting_0 (boolean)\nControls behaviour number 0.")
+    assert "The default is off." in first.text
+    assert first.anchor == "GUC-SETTING-0"                  # citations point at the setting
+    assert [c.ordinal for c in doc.clauses] == list(range(7))
+
+
+def test_terms_without_ids_get_slug_keys():
+    doc = parse_doc(_guc_page(with_ids=False), URL)
+    assert [c.key for c in doc.clauses[1:]] == [
+        f"RUNTIME-CONFIG-LOGGING-WHAT/setting-{i}-boolean" for i in range(6)]
+    assert all(c.anchor == "RUNTIME-CONFIG-LOGGING-WHAT" for c in doc.clauses[1:])
+
+
+def test_small_term_list_stays_in_one_clause():
+    # SECTION's variablelist has two short terms: the section is not oversized
+    first = parse_doc(SECTION, URL).clauses[0]
+    assert "local" in first.text and "host" in first.text
+    assert all(c.key != "local" for c in parse_doc(SECTION, URL).clauses)
+
+
+def test_single_term_never_splits_a_definition_from_its_text():
+    doc = parse_doc(_guc_page(), URL)
+    for c in doc.clauses[1:]:
+        term, _, rest = c.text.partition("\n")
+        assert term.startswith("setting_") and "Controls behaviour" in rest
+
+
+def test_inline_markup_does_not_add_spaces_before_punctuation():
+    html = ('<div id="docContent"><div class="sect1" id="P"><div class="titlepage"><div><div>'
+            '<h2 class="title">1. Using <code>trust</code>, safely</h2></div></div></div>'
+            '<p>Use <code>trust</code>, or <code>md5</code>. See <a href="x">the docs</a>.<br/>'
+            'Next line (<code>boolean</code>).</p></div></div>')
+    doc = parse_doc(html, URL)
+    assert doc.title == "1. Using trust, safely"
+    # a <br> is whitespace (paragraphs are single lines), never glued text
+    assert doc.clauses[0].text == "Use trust, or md5. See the docs. Next line (boolean)."

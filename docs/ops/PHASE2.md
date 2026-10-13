@@ -83,11 +83,29 @@ python -m opsgraph docs show auth-pg-hba-conf          # 조항 목록(제목 �
 - 목차(`toc`), 이전/다음 링크, 페이지 푸터, 소제목 옆 `#` 링크는 본문에서 제외한다. Note/Warning 같은 박스의 라벨은 섹션이 아니라 본문 줄로 남긴다.
 - **조항 ID는 `(문서, 키)`로 식별한다**(키 = 소제목 앵커). 파서 규칙을 바꾸거나 페이지가 갱신돼도 **텍스트가 같은 조항은 같은 ID를 유지**해서, 이후 단계에서 조항에 붙는 추출 결과가 불필요하게 사라지지 않는다. 사라진 소제목의 조항만 삭제된다.
 
-### 2.2 검증 방법과 한계
-- 테스트(94개)는 DocBook 출력 구조를 재현한 샘플로 파서를 확인했다. **실제 postgresql.org 페이지는 이 환경에서 볼 수 없으므로** `docs parse`의 페이지별 보고(조항 수, 글자 수, 가장 긴 조항)와 `docs show`로 직접 확인한다.
-  - 조항 수가 0인 페이지는 `<-- no clauses`로 표시된다(페이지 구조가 다르다는 신호).
-  - 한 조항이 6,000자를 크게 넘거나, 조항이 지나치게 많이 쪼개지면 분할 규칙을 조정한다.
-  - `docs show <페이지> --full`로 본문이 원문과 같은지 한두 건 대조한다.
+### 2.2 실제 페이지 첫 결과(24쪽, 오류 0)와 파서 개선 (`PARSER_VERSION = "2"`)
+첫 실행에서 24쪽이 모두 처리됐지만 조항 분할이 거칠었다. 예: `runtime-config-logging` 10조항/39,759자, `runtime-config-connection`
+6조항/23,721자, `auth-pg-hba-conf` 5조항/24,518자(최대 6,043자)처럼 **설정 항목 수십 개가 글자 수 기준으로 잘려** 6,000자 덩어리가 됐다.
+
+- **용어 단위 분할**: 3,500자를 넘는 절에 용어 목록(`dt`/`dd`)이 둘 이상이면 **용어 하나를 조항 하나**로 만든다(설명과 용어를 떼어 놓지 않음).
+  조항의 제목 경로 끝에 용어(`log_connections (boolean)`)가 붙고, 용어 요소의 `id`가 있으면 그것이 키와 출처 URL 앵커가 되어
+  인용이 `…#GUC-LOG-CONNECTIONS`처럼 설정 단위로 정확해진다(없으면 용어 텍스트로 키를 만든다). 소개 문단은 별도 조항이다.
+- **공백 버그 수정**: 인라인 코드 뒤에 구두점이 오면 `trust ,`처럼 공백이 끼던 문제를 고쳤다. 다음 단계의 "원문 근거 문장 검증"은 인용문이
+  원문 텍스트의 부분 문자열인지 보므로, 텍스트가 원문과 같아야 한다.
+- 대상에 `predefined-roles` 추가(`default-roles`는 PostgreSQL 14 이후 안내 페이지로 보이며 379자뿐이었다).
+- 파서 버전이 올라서 **저장된 문서가 자동으로 다시 만들어진다**(조항 키가 바뀌어 이전 조항은 삭제되고 새로 생성된다. 아직 추출 결과가 없어 영향 없음).
+
+### 2.2 확인 방법
+```bash
+git pull origin claude/zealous-bohr-081jz8
+python -m opsgraph collect postgresql-docs     # predefined-roles 추가분 수집
+python -m opsgraph docs parse                  # 페이지별 조항 수·글자 수·최장 조항
+python -m opsgraph docs show runtime-config-logging
+python -m opsgraph docs show runtime-config-logging --full   # 본문을 사이트 원문과 대조
+```
+- `runtime-config-logging`, `runtime-config-connection`은 **수십 개 조항**(설정 하나당 하나)이 되어야 하고, 최장 조항이 6,000자보다 훨씬 짧아져야 한다.
+- 조항 목록에서 `log_connections (boolean)` 같은 제목 경로와 `#GUC-…` 앵커가 보이는지 확인한다.
+- 한계: 용어 목록이 아닌 긴 산문 절(예: `continuous-archiving`)은 여전히 문단 경계에서 크기 기준으로 나뉜다.
 
 ## 알려진 한계
 1. **파서는 실제 페이지 1건(CVE-2022-1552)의 출력으로 맞췄다.** 이 환경에서는 postgresql.org에 접속할 수 없다. 다른 연도·형식의 페이지는 `normalize pg`의 필드별 성공률과 `score_mismatch`로 확인하고, 낮은 필드는 `inspect-page` 출력으로 조정한다.
