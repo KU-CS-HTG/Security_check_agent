@@ -1,13 +1,8 @@
 # 설치·기동 (Phase 0)
 
-전제: Windows 11 + WSL2(Ubuntu) + Docker Desktop(WSL 통합 켜기), Git. RAM 8GB면 아래 `.wslconfig`를 먼저 설정한다.
-
-```ini
-# %UserProfile%\.wslconfig   (설정 후 PowerShell에서 wsl --shutdown)
-[wsl2]
-memory=6GB
-swap=4GB
-```
+전제: Windows 11 + WSL2(Ubuntu) + Docker Desktop(WSL 통합 켜기), Git. (PC: RAM 32GB, GPU VRAM 8GB 기준)
+WSL이 없으면 PowerShell에서 `wsl --install -d Ubuntu`. 저장소는 Ubuntu 홈(`~/`) 아래에 둔다. Git Bash에서도 동작은 하지만 파일 권한(chmod 600)이 강제되지 않아 preflight가 경고한다.
+포트가 이미 사용 중이면 `.env`의 `POSTGRES_PORT`, `NEO4J_HTTP_PORT`, `NEO4J_BOLT_PORT`, `AIRFLOW_PORT`를 바꾼다(`NEO4J_URI`의 포트도 함께).
 
 ## 1. 코드와 Python 환경 (WSL Ubuntu 터미널)
 ```bash
