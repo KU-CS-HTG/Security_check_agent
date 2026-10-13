@@ -57,6 +57,8 @@ pytest -m integration        # DB 필요: docker compose up 후 python -m opsgra
 | `osv ecosystems` | 버킷에 46개 생태계, 범위 파일의 `Debian`, `Alpine`, `GIT` 모두 존재. `ecosystems.txt` 재요청은 304로 캐시 재사용 |
 | `collect postgresql-security --limit 3` | `inserted 4`(인덱스 1 + CVE 페이지 3), `errors 0`, robots.txt 확인, 요청 간격 약 2초 |
 | `collect osv -e Debian --dry-run` | 전체 70,370건 중 범위 해당 284건, 범위 밖 70,086건, Ubuntu 레코드 0건, 라이선스 `UNKNOWN` 284건. all.zip 다운로드 약 2분 10초 |
+| `collect osv -e Alpine --dry-run` | 전체 4,729건 중 범위 해당 148건, 라이선스 `UNKNOWN` 148건, `errors 0` |
+| `collect osv -e GIT --dry-run` | 전체 113,925건 중 범위 해당 54건(저장소 URL 매칭), 라이선스 `UNKNOWN` 54건, `errors 0` |
 | `collect osv -e Debian` 2회 연속 | 두 번째 실행 `inserted 0 / updated 0` (증분 경로와 중복 방지 확인) |
 
 범위 점검: 적재된 레코드의 `affected` 패키지는 `nginx`(226), `postgresql-NN`(7.4~18), `postgresql-common` 등이 대부분이다.
@@ -64,6 +66,8 @@ pytest -m integration        # DB 필요: docker compose up 후 python -m opsgra
 nginx와 함께 여러 제품을 영향 대상으로 나열하기 때문이다. 필터는 "대상 제품이 한 번이라도 나오는 레코드"를 저장하고
 레코드는 원문 그대로 보존한다. 제품별 구분은 `matched_products` 컬럼으로 한다.
 
-## 검증하지 못한 가정 (남은 항목)
-1. `GIT`, `Alpine` 생태계의 크기와 필터 결과(dry-run 필요)
-2. Debian 변환 데이터의 라이선스(OSV 문서에 표기 없음 → `UNKNOWN`으로 저장, 공개 산출물 제외)
+## 남은 항목과 한계
+1. **범위 안의 레코드 486건(Debian 284 + Alpine 148 + GIT 54)이 전부 라이선스 `UNKNOWN`이다.** OSV 문서가 라이선스를 표기한
+   업스트림(GHSA, PYSEC 등)에는 대상 제품(PostgreSQL, Nginx)의 레코드가 없었다. Debian 보안 추적기, Alpine secdb, NVD 변환분의
+   라이선스를 각각 확인하기 전까지 이 데이터는 **내부 분석·평가 전용**이다(공개 산출물 제외).
+2. 같은 취약점이 Debian·Alpine·GIT에 중복으로 나올 수 있다(`export_ecosystem`이 키의 일부). 통합은 Phase 3(그래프)에서 한다.
